@@ -12,8 +12,8 @@ client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
     response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
+        model="claude-haiku-4-5-20251001",
+        max_tokens=512,
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": user_msg}]
     )
