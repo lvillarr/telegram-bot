@@ -201,9 +201,21 @@ Actúa como el Subgerente de Mejora Continua. Define el plan de entrega y puesta
 
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
+MAX_HISTORY = 20  # máximo de mensajes (turnos usuario+asistente) a conservar
+
+
+def trim_history(history: list) -> list:
+    """Mantiene solo los últimos MAX_HISTORY mensajes (par usuario/asistente)."""
+    return history[-MAX_HISTORY:]
+
 
 def claude_response(system: str, user_msg: str, max_tokens: int = 512,
-                    model: str = "claude-haiku-4-5-20251001") -> str:
+                    model: str = "claude-haiku-4-5-20251001",
+                    history: list | None = None) -> str:
+    """Llama a la API de Anthropic con historial conversacional opcional."""
+    messages = list(history) if history else []
+    messages.append({"role": "user", "content": user_msg})
+
     last_error = None
     for attempt in range(3):
         try:
@@ -211,7 +223,7 @@ def claude_response(system: str, user_msg: str, max_tokens: int = 512,
                 model=model,
                 max_tokens=max_tokens,
                 system=system,
-                messages=[{"role": "user", "content": user_msg}]
+                messages=messages,
             )
             return response.content[0].text
         except anthropic.APIStatusError as e:
@@ -221,6 +233,14 @@ def claude_response(system: str, user_msg: str, max_tokens: int = 512,
                 continue
             raise
     raise last_error
+
+
+def push_history(context, user_msg: str, assistant_reply: str):
+    """Agrega un turno al historial y lo recorta si es necesario."""
+    history = context.user_data.setdefault("history", [])
+    history.append({"role": "user",      "content": user_msg})
+    history.append({"role": "assistant", "content": assistant_reply})
+    context.user_data["history"] = trim_history(history)
 
 
 ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
@@ -276,7 +296,10 @@ async def modelo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply = claude_response(SYSTEM_PROMPT, update.message.text, model=get_model(context))
+    user_msg = update.message.text
+    history  = context.user_data.get("history", [])
+    reply = claude_response(SYSTEM_PROMPT, user_msg, model=get_model(context), history=history)
+    push_history(context, user_msg, reply)
     context.user_data["last_analysis"] = reply
     await update.message.reply_text(
         fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
@@ -305,6 +328,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }]
     )
     analysis = response.content[0].text
+    push_history(context, caption, analysis)
     context.user_data["last_analysis"] = analysis
 
     await update.message.reply_text(
@@ -719,7 +743,9 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Identifica datos clave, KPIs, procesos, problemas u oportunidades de mejora.\n\n"
         f"{content[:6000]}"
     )
-    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context))
+    history  = context.user_data.get("history", [])
+    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
+    push_history(context, prompt, analysis)
     context.user_data["last_analysis"] = analysis
 
     await update.message.reply_text(
@@ -764,9 +790,21 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
 
+async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Borra el historial conversacional del usuario."""
+    context.user_data.pop("history", None)
+    context.user_data.pop("last_analysis", None)
+    await update.message.reply_text(
+        "🔄 *Conversación reiniciada.* El contexto anterior fue borrado.\n"
+        "Puedes empezar una nueva consulta desde cero.",
+        parse_mode="Markdown"
+    )
+
+
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start",    "🌲 Qué soy y cómo funciono"),
+        BotCommand("reset",    "🔄 Reiniciar conversación (borrar contexto)"),
         BotCommand("modelo",   "🤖 Seleccionar modelo LLM (Haiku / Sonnet / Opus)"),
         BotCommand("spec",     "📋 Especificación de iniciativa forestal"),
         BotCommand("plan",     "🗺️ Plan de ejecución forestal"),
@@ -785,6 +823,7 @@ app = (
 )
 
 app.add_handler(CommandHandler("start", start_handler))
+app.add_handler(CommandHandler("reset", reset_handler))
 app.add_handler(CommandHandler("modelo", modelo_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback, pattern="^mdl_"))
 
