@@ -177,12 +177,13 @@ Actúa como el Subgerente de Mejora Continua. Define el plan de entrega y puesta
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 
-def claude_response(system: str, user_msg: str, max_tokens: int = 512) -> str:
+def claude_response(system: str, user_msg: str, max_tokens: int = 512,
+                    model: str = "claude-haiku-4-5-20251001") -> str:
     last_error = None
     for attempt in range(3):
         try:
             response = client.messages.create(
-                model="claude-haiku-4-5-20251001",
+                model=model,
                 max_tokens=max_tokens,
                 system=system,
                 messages=[{"role": "user", "content": user_msg}]
@@ -191,7 +192,7 @@ def claude_response(system: str, user_msg: str, max_tokens: int = 512) -> str:
         except anthropic.APIStatusError as e:
             last_error = e
             if e.status_code == 500 and attempt < 2:
-                time.sleep(2 ** attempt)  # 1s, 2s
+                time.sleep(2 ** attempt)
                 continue
             raise
     raise last_error
@@ -258,18 +259,24 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(f"⏳ Generando *{artifact_type}*...", parse_mode="Markdown")
 
     description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
-    system = SYSTEM_PROMPT + "\n\n" + ARTIFACT_PROMPTS[artifact_type]
-    raw = claude_response(system, description, max_tokens=2000)
+    # Usar solo el prompt de artefacto, sin el SYSTEM_PROMPT completo
+    # para no desperdiciar tokens del contexto en la generación visual
+    artifact_model = "claude-sonnet-4-6"
+    artifact_tokens = 6000 if artifact_type == "html" else 2000
+    raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
+                          max_tokens=artifact_tokens, model=artifact_model)
 
     try:
         if artifact_type == "html":
-            # Eliminar bloques markdown si Claude los incluyó
             html = raw.strip()
             if html.startswith("```"):
-                html = html.split("\n", 1)[-1]  # quita la línea ```html
+                html = html.split("\n", 1)[-1]
             if html.endswith("```"):
-                html = html.rsplit("```", 1)[0]  # quita el cierre
+                html = html.rsplit("```", 1)[0]
             html = html.strip()
+            if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
+                await query.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
+                return
             buf = io.BytesIO(html.encode("utf-8"))
             await query.message.reply_document(
                 document=buf, filename="dashboard-arauco.html",
@@ -514,8 +521,10 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"⏳ Generando artefacto *{artifact_type}*...", parse_mode="Markdown")
 
-    system = SYSTEM_PROMPT + "\n\n" + ARTIFACT_PROMPTS[artifact_type]
-    raw = claude_response(system, description, max_tokens=2000)
+    artifact_model = "claude-sonnet-4-6"
+    artifact_tokens = 6000 if artifact_type == "html" else 2000
+    raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
+                          max_tokens=artifact_tokens, model=artifact_model)
 
     try:
         if artifact_type == "html":
@@ -525,6 +534,9 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if html.endswith("```"):
                 html = html.rsplit("```", 1)[0]
             html = html.strip()
+            if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
+                await update.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
+                return
             buf = io.BytesIO(html.encode("utf-8"))
             await update.message.reply_document(document=buf, filename="dashboard-arauco.html",
                                                 caption="🌲 Dashboard listo — abre el archivo en tu browser")
