@@ -204,9 +204,54 @@ ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("🌐 HTML",    callback_data="art_html"),
 ]])
 
+MODELS = {
+    "haiku":  ("claude-haiku-4-5-20251001", "⚡ Haiku",  "Rápido y económico"),
+    "sonnet": ("claude-sonnet-4-6",          "🧠 Sonnet", "Balanceado"),
+    "opus":   ("claude-opus-4-6",            "🚀 Opus",   "Máxima capacidad"),
+}
+DEFAULT_MODEL = "haiku"
+
+def get_model(context) -> str:
+    """Retorna el model ID seleccionado por el usuario (o el default)."""
+    key = context.user_data.get("model", DEFAULT_MODEL)
+    return MODELS[key][0]
+
+def get_model_label(context) -> str:
+    key = context.user_data.get("model", DEFAULT_MODEL)
+    return MODELS[key][1]
+
+def model_keyboard(current: str) -> InlineKeyboardMarkup:
+    buttons = []
+    for key, (_, label, desc) in MODELS.items():
+        check = "✅ " if key == current else ""
+        buttons.append([InlineKeyboardButton(f"{check}{label} — {desc}", callback_data=f"mdl_{key}")])
+    return InlineKeyboardMarkup(buttons)
+
+async def modelo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    current = context.user_data.get("model", DEFAULT_MODEL)
+    await update.message.reply_text(
+        f"🤖 *Selecciona el modelo LLM*\nActual: {get_model_label(context)}",
+        reply_markup=model_keyboard(current),
+        parse_mode="Markdown"
+    )
+
+async def modelo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    key = query.data.replace("mdl_", "")
+    if key not in MODELS:
+        return
+    context.user_data["model"] = key
+    _, label, desc = MODELS[key]
+    await query.edit_message_text(
+        f"✅ Modelo actualizado: *{label}*\n_{desc}_\n\nTodos los mensajes usarán este modelo.",
+        reply_markup=model_keyboard(key),
+        parse_mode="Markdown"
+    )
+
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    reply = claude_response(SYSTEM_PROMPT, update.message.text)
+    reply = claude_response(SYSTEM_PROMPT, update.message.text, model=get_model(context))
     context.user_data["last_analysis"] = reply
     await update.message.reply_text(
         reply + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
@@ -223,7 +268,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     caption = update.message.caption or "Analiza esta imagen en el contexto operacional forestal de Arauco. Identifica equipos, procesos, problemas o métricas relevantes."
 
     response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
+        model=get_model(context),
         max_tokens=512,
         system=SYSTEM_PROMPT,
         messages=[{
@@ -326,7 +371,7 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     skill_system = SYSTEM_PROMPT + "\n\n" + SKILL_PROMPTS[command]
-    reply = claude_response(skill_system, args, max_tokens=800)
+    reply = claude_response(skill_system, args, max_tokens=800, model=get_model(context))
     await update.message.reply_text(reply)
 
 
@@ -649,7 +694,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Identifica datos clave, KPIs, procesos, problemas u oportunidades de mejora.\n\n"
         f"{content[:6000]}"
     )
-    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800)
+    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context))
     context.user_data["last_analysis"] = analysis
 
     await update.message.reply_text(
@@ -697,6 +742,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start",    "🌲 Qué soy y cómo funciono"),
+        BotCommand("modelo",   "🤖 Seleccionar modelo LLM (Haiku / Sonnet / Opus)"),
         BotCommand("spec",     "📋 Especificación de iniciativa forestal"),
         BotCommand("plan",     "🗺️ Plan de ejecución forestal"),
         BotCommand("build",    "🔨 Construcción de solución forestal"),
@@ -714,6 +760,8 @@ app = (
 )
 
 app.add_handler(CommandHandler("start", start_handler))
+app.add_handler(CommandHandler("modelo", modelo_handler))
+app.add_handler(CallbackQueryHandler(modelo_callback, pattern="^mdl_"))
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
