@@ -1,0 +1,3 @@
+[submodule "proyecto_claude"]
+	path = proyecto_claude
+	url = https://github.com/lvillarr/pro-claude.git
