@@ -1,0 +1,11 @@
+[phases.setup]
+nixPkgs = ["git"]
+
+[phases.build]
+cmds = [
+  "git submodule update --init --recursive",
+  "pip install -r requirements.txt"
+]
+
+[start]
+cmd = "python bot.py"
