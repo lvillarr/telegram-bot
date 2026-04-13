@@ -43,7 +43,7 @@ def load_prompt(path: str) -> str:
     except FileNotFoundError:
         return ""
 
-BASE_DIR = os.path.join(os.path.dirname(__file__), "proyecto_claude")
+BASE_DIR = os.path.join(os.path.dirname(__file__), "proyecto_claude", "Documents", "Proyecto_Claude")
 
 orquestador = load_prompt(os.path.join(BASE_DIR, "orquestador", "CLAUDE.md"))
 agente_td    = load_prompt(os.path.join(BASE_DIR, "agentes", "TD", "CLAUDE.md"))
