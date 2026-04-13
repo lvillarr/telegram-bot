@@ -642,15 +642,15 @@ START_TEXT = """🌲 *Arauco — Subgerencia de Mejora Continua*
 Soy el asistente digital de tu equipo. Integro tres agentes especializados coordinados por el Subgerente de Mejora Continua:
 
 🏭 *Agente EO — Excelencia Operacional*
-Lean, GEMBA, KAIZEN, BPMN 2\.0, KPIs, OEE, A3/PDCA, rediseño de procesos forestales
+Lean, GEMBA, KAIZEN, BPMN 2.0, KPIs, OEE, A3/PDCA, rediseño de procesos forestales
 
 🤖 *Agente IA — Inteligencia Artificial*
-Modelos predictivos \(ML/XGBoost\), GenAI con Claude API, LangGraph, cartografía con IA, dashboards HTML
+Modelos predictivos (ML/XGBoost), GenAI con Claude API, LangGraph, cartografía con IA, dashboards HTML
 
 ⚙️ *Agente TD — Transformación Digital*
-Integraciones SAP/SGL/Planex/Forest Data, telemetría de maquinaria forestal \(Tigercat, John Deere, Develon\), ETL, arquitecturas de datos
+Integraciones SAP/SGL/Planex/Forest Data, telemetría de maquinaria forestal (Tigercat, John Deere, Develon), ETL, arquitecturas de datos
 
-🧭 *Orquestador \(Subgerente MC\)*
+🧭 *Orquestador (Subgerente MC)*
 Coordina los agentes, sintetiza resultados y entrega análisis ejecutivos estilo McKinsey/BCG
 
 ---
@@ -664,10 +664,10 @@ Coordina los agentes, sintetiza resultados y entrega análisis ejecutivos estilo
 /ship — Lanzamiento a operación
 /artifact — Genera Excel, gráfico o dashboard HTML
 
-También puedes enviar una imagen, PDF, Word o Excel y los agentes lo analizarán\."""
+También puedes enviar una imagen, PDF, Word o Excel y los agentes lo analizarán."""
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(START_TEXT, parse_mode="MarkdownV2")
+    await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
 
 async def post_init(application):
@@ -682,7 +682,12 @@ async def post_init(application):
         BotCommand("artifact", "🎨 Genera HTML, Excel o gráfico PNG"),
     ])
 
-app = ApplicationBuilder().token(os.environ["TELEGRAM_TOKEN"]).post_init(post_init).build()
+app = (
+    ApplicationBuilder()
+    .token(os.environ["TELEGRAM_TOKEN"])
+    .post_init(post_init)
+    .build()
+)
 
 app.add_handler(CommandHandler("start", start_handler))
 
@@ -695,4 +700,4 @@ app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
-app.run_polling()
+app.run_polling(drop_pending_updates=True)
