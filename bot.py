@@ -1,6 +1,13 @@
 import os
+import io
+import json
 import base64
+import tempfile
 import anthropic
+import openpyxl
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
 from telegram import Update
 from telegram.ext import ContextTypes
@@ -175,11 +182,204 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(reply)
 
 
+ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo visual y lo envía aquí
+
+*Tipos disponibles:*
+• `html` — Dashboard interactivo con Chart.js
+• `excel` — Tabla de datos en formato Excel
+• `chart` — Gráfico PNG (barras, línea o torta)
+
+*Uso:*
+`/artifact html dashboard OEE semanal línea 3`
+`/artifact excel tabla KPIs cosecha por turno`
+`/artifact chart barras pérdidas por equipo semana 23`"""
+
+ARTIFACT_PROMPTS = {
+    "html": """Genera un dashboard HTML completo y autocontenido (sin dependencias externas descargadas, usa CDN de Chart.js: https://cdn.jsdelivr.net/npm/chart.js).
+
+El HTML debe:
+- Tener un título claro relacionado al contexto forestal de Arauco
+- Incluir al menos un gráfico Chart.js con datos de ejemplo realistas para el contexto pedido
+- Usar colores corporativos verdes (#2d6a4f, #40916c, #74c69d) y fondo blanco
+- Mostrar KPIs o métricas relevantes en tarjetas resumen sobre el gráfico
+- Ser completamente funcional al abrir el archivo .html en un browser
+
+Responde ÚNICAMENTE con el código HTML completo, sin explicaciones ni bloques de código markdown. Empieza directamente con <!DOCTYPE html>.""",
+
+    "excel": """Genera datos estructurados en formato JSON para crear un archivo Excel.
+
+El JSON debe tener exactamente esta estructura:
+{
+  "titulo": "Nombre de la hoja",
+  "encabezados": ["Col1", "Col2", "Col3", ...],
+  "filas": [
+    ["valor1", "valor2", "valor3", ...],
+    ...
+  ]
+}
+
+Los datos deben ser realistas para el contexto forestal de Arauco pedido (KPIs, mérdidas, productividad, equipos, etc.).
+Incluye entre 5 y 15 filas de datos representativos.
+Responde ÚNICAMENTE con el JSON válido, sin explicaciones ni bloques de código markdown.""",
+
+    "chart": """Genera datos para un gráfico en formato JSON.
+
+El JSON debe tener exactamente esta estructura:
+{
+  "tipo": "bar" | "line" | "pie",
+  "titulo": "Título del gráfico",
+  "etiquetas": ["Label1", "Label2", ...],
+  "datasets": [
+    {
+      "nombre": "Serie 1",
+      "valores": [10, 20, 30, ...]
+    }
+  ],
+  "unidad": "unidad del eje Y (ej: horas, m³, %)"
+}
+
+Los datos deben ser realistas para el contexto forestal de Arauco pedido.
+Incluye entre 5 y 12 puntos de datos.
+Responde ÚNICAMENTE con el JSON válido, sin explicaciones ni bloques de código markdown.""",
+}
+
+
+def build_excel(data: dict) -> io.BytesIO:
+    """Crea un archivo Excel a partir del JSON generado por Claude."""
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = data.get("titulo", "Datos")[:31]
+
+    # Encabezados con estilo
+    from openpyxl.styles import Font, PatternFill, Alignment
+    header_fill = PatternFill(start_color="2D6A4F", end_color="2D6A4F", fill_type="solid")
+    header_font = Font(color="FFFFFF", bold=True)
+
+    for col, header in enumerate(data["encabezados"], start=1):
+        cell = ws.cell(row=1, column=col, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal="center")
+        ws.column_dimensions[cell.column_letter].width = max(len(str(header)) + 4, 12)
+
+    for row_idx, fila in enumerate(data["filas"], start=2):
+        for col_idx, valor in enumerate(fila, start=1):
+            ws.cell(row=row_idx, column=col_idx, value=valor)
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def build_chart(data: dict) -> io.BytesIO:
+    """Crea un gráfico PNG a partir del JSON generado por Claude."""
+    fig, ax = plt.subplots(figsize=(10, 5))
+    colores = ["#2d6a4f", "#40916c", "#74c69d", "#b7e4c7", "#1b4332", "#52b788"]
+    tipo = data.get("tipo", "bar")
+    etiquetas = data["etiquetas"]
+    datasets = data["datasets"]
+    unidad = data.get("unidad", "")
+
+    if tipo == "pie" and datasets:
+        ax.pie(datasets[0]["valores"], labels=etiquetas, colors=colores,
+               autopct="%1.1f%%", startangle=90)
+    elif tipo == "line":
+        for i, ds in enumerate(datasets):
+            ax.plot(etiquetas, ds["valores"], marker="o",
+                    color=colores[i % len(colores)], label=ds["nombre"], linewidth=2)
+        ax.set_xlabel("")
+        ax.set_ylabel(unidad)
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+    else:  # bar
+        x = range(len(etiquetas))
+        ancho = 0.8 / max(len(datasets), 1)
+        for i, ds in enumerate(datasets):
+            offset = (i - len(datasets) / 2 + 0.5) * ancho
+            bars = ax.bar([xi + offset for xi in x], ds["valores"],
+                          ancho, label=ds["nombre"], color=colores[i % len(colores)])
+            ax.bar_label(bars, fmt="%.1f", padding=2, fontsize=8)
+        ax.set_xticks(list(x))
+        ax.set_xticklabels(etiquetas, rotation=15, ha="right")
+        ax.set_ylabel(unidad)
+        ax.legend()
+        ax.grid(True, axis="y", alpha=0.3)
+
+    ax.set_title(data.get("titulo", ""), fontsize=13, fontweight="bold", pad=12)
+    fig.tight_layout()
+
+    buf = io.BytesIO()
+    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    buf.seek(0)
+    return buf
+
+
+async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not context.args:
+        await update.message.reply_text(ARTIFACT_HELP, parse_mode="Markdown")
+        return
+
+    artifact_type = context.args[0].lower()
+    description = " ".join(context.args[1:]) if len(context.args) > 1 else ""
+
+    if artifact_type not in ARTIFACT_PROMPTS:
+        await update.message.reply_text(
+            f"Tipo `{artifact_type}` no reconocido. Usa: `html`, `excel` o `chart`.",
+            parse_mode="Markdown"
+        )
+        return
+
+    if not description:
+        await update.message.reply_text(
+            f"Agrega una descripción. Ejemplo:\n`/artifact {artifact_type} OEE equipos cosecha semana 23`",
+            parse_mode="Markdown"
+        )
+        return
+
+    await update.message.reply_text(f"⏳ Generando artefacto *{artifact_type}*...", parse_mode="Markdown")
+
+    system = SYSTEM_PROMPT + "\n\n" + ARTIFACT_PROMPTS[artifact_type]
+    raw = claude_response(system, description, max_tokens=2000)
+
+    try:
+        if artifact_type == "html":
+            buf = io.BytesIO(raw.encode("utf-8"))
+            filename = f"dashboard-arauco.html"
+            await update.message.reply_document(document=buf, filename=filename,
+                                                caption="🌲 Dashboard listo — abre el archivo en tu browser")
+
+        elif artifact_type == "excel":
+            # Limpiar posibles bloques markdown del JSON
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_excel(data)
+            filename = f"arauco-{data.get('titulo', 'datos').lower().replace(' ', '-')[:30]}.xlsx"
+            await update.message.reply_document(document=buf, filename=filename,
+                                                caption="📊 Excel generado con datos del contexto forestal")
+
+        elif artifact_type == "chart":
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_chart(data)
+            await update.message.reply_photo(photo=buf,
+                                             caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua")
+
+    except json.JSONDecodeError:
+        await update.message.reply_text(
+            "⚠️ Error al procesar la respuesta. Intenta con una descripción más específica."
+        )
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error generando el artefacto: {str(e)[:200]}")
+
+
 app = ApplicationBuilder().token(os.environ["TELEGRAM_TOKEN"]).build()
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
 
+app.add_handler(CommandHandler("artifact", artifact_handler))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
