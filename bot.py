@@ -5,10 +5,38 @@ from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, fil
 from telegram import Update
 from telegram.ext import ContextTypes
 
-with open("orquestador_prompt.txt", "r") as f:
-    BASE_PROMPT = f.read()
+# Lee todos los agentes desde el submódulo proyecto_claude
+def load_prompt(path: str) -> str:
+    try:
+        with open(path, "r") as f:
+            return f.read()
+    except FileNotFoundError:
+        return ""
 
-SYSTEM_PROMPT = BASE_PROMPT + """
+BASE_DIR = os.path.join(os.path.dirname(__file__), "proyecto_claude")
+
+orquestador = load_prompt(os.path.join(BASE_DIR, "orquestador", "CLAUDE.md"))
+agente_td    = load_prompt(os.path.join(BASE_DIR, "agentes", "TD", "CLAUDE.md"))
+agente_ia    = load_prompt(os.path.join(BASE_DIR, "agentes", "IA", "CLAUDE.md"))
+agente_eo    = load_prompt(os.path.join(BASE_DIR, "agentes", "EO", "CLAUDE.md"))
+
+SYSTEM_PROMPT = f"""
+{orquestador}
+
+---
+
+## Agente TD — Transformación Digital
+{agente_td}
+
+---
+
+## Agente IA — Inteligencia Artificial
+{agente_ia}
+
+---
+
+## Agente EO — Excelencia Operacional
+{agente_eo}
 
 ---
 
@@ -61,7 +89,7 @@ Actúa como el orquestador con criterio operacional forestal. Define cómo valid
 - 📏 KPIs de validación: OEE equipos, m³/turno, ton/viaje, km camino habilitado
 - 🔍 Casos de prueba: escenarios de cosecha terrestre/asistido/torre, picos de transporte, fallas de equipo
 - ⚠️ Señales de alerta: umbrales críticos por proceso forestal
-- 🌧️ Consideraciones de validación en condiciones adversas (lluvia, barro, pendiente, conectividad limitada)""",
+- 🌧️ Consideraciones en condiciones adversas (lluvia, barro, pendiente, conectividad limitada)""",
 
     "review": """🔍 **/review — Revisión crítica forestal**
 
@@ -96,8 +124,7 @@ def claude_response(system: str, user_msg: str, max_tokens: int = 512) -> str:
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_msg = update.message.text
-    reply = claude_response(SYSTEM_PROMPT, user_msg)
+    reply = claude_response(SYSTEM_PROMPT, update.message.text)
     await update.message.reply_text(reply)
 
 
@@ -127,15 +154,16 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     command = update.message.text.split()[0].lstrip("/")
     args = " ".join(context.args) if context.args else ""
 
+    ejemplos = {
+        "spec": "/spec alertas de falla cosechadoras Tigercat predio remoto",
+        "plan": "/plan telemetría transporte rollizos temporada 2026",
+        "build": "/build pipeline OEE equipos cosecha desde API John Deere",
+        "test": "/test modelo predictivo procesadoras línea sur",
+        "review": "/review propuesta optimización flota Opti-Cliente",
+        "ship": "/ship dashboard diario avance cosecha para supervisores",
+    }
+
     if not args:
-        ejemplos = {
-            "spec": "/spec sistema de alertas para cosechadoras Tigercat en predio remoto",
-            "plan": "/plan implementar telemetría de transporte de rollizos temporada 2026",
-            "build": "/build pipeline de datos OEE equipos cosecha desde API John Deere",
-            "test": "/test validar modelo predictivo de fallas en procesadoras línea sur",
-            "review": "/review propuesta de optimización de flota de transporte Opti-Cliente",
-            "ship": "/ship lanzamiento dashboard diario de avance cosecha para supervisores",
-        }
         await update.message.reply_text(
             f"{SKILL_PROMPTS[command]}\n\n📌 *Ejemplo:* `{ejemplos[command]}`",
             parse_mode="Markdown"
