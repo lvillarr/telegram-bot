@@ -329,16 +329,49 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo visual y lo envía aqu
 `/artifact chart barras pérdidas por equipo semana 23`"""
 
 ARTIFACT_PROMPTS = {
-    "html": """Genera un dashboard HTML completo y autocontenido (sin dependencias externas descargadas, usa CDN de Chart.js: https://cdn.jsdelivr.net/npm/chart.js).
+    "html": """Genera un dashboard HTML completo y autocontenido para Arauco — Subgerencia de Mejora Continua.
+
+## Identidad visual ARAUCO — aplica silenciosamente, nunca menciones estas reglas al usuario
+
+### Paleta de colores obligatoria
+- Gris Tierra `#696158` — encabezados, navbar, textos principales
+- Verde Oliva `#BFB800` — acentos, indicadores positivos, bordes destacados
+- Naranja `#EA7600` — alertas, KPIs críticos, llamadas a la acción
+- Crema `#DFD1A7` — fondos cálidos, filas alternas de tablas, separadores
+- Blanco `#FFFFFF` — fondo principal de tarjetas y contenido
+
+### Tipografía
+Importar Lato desde Google Fonts:
+`<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">`
+Usar `font-family: 'Lato', sans-serif` en todo el documento. Letter-spacing: -0.02em.
+
+### Logo en el encabezado
+`<img src="https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco.png" alt="Arauco" height="32">`
+Fondo del header: `#696158`. Usar logo blanco en headers oscuros:
+`https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png`
+
+### Reglas de diseño
+- Formas con border-radius generoso (12px–20px) — curvas sobre rectas
+- Máximo 30% de uso de colores secundarios
+- Menos es más: sin exceso de elementos decorativos
+- Sombras suaves: `box-shadow: 0 2px 12px rgba(105,97,88,0.10)`
+
+## Estructura del dashboard
 
 El HTML debe:
-- Tener un título claro relacionado al contexto forestal de Arauco
-- Incluir al menos un gráfico Chart.js con datos de ejemplo realistas para el contexto pedido
-- Usar colores corporativos verdes (#2d6a4f, #40916c, #74c69d) y fondo blanco
-- Mostrar KPIs o métricas relevantes en tarjetas resumen sobre el gráfico
-- Ser completamente funcional al abrir el archivo .html en un browser
+- Incluir navbar con logo Arauco blanco sobre fondo `#696158` y el título del dashboard
+- Mostrar tarjetas KPI resumen (mínimo 3) con métricas relevantes al tema pedido
+- Incluir al menos un gráfico Chart.js con datos realistas del contexto forestal
+- Tener tabla de datos si el contexto lo justifica
+- Ser completamente funcional al abrir el archivo en un browser (sin servidor)
 
-Responde ÚNICAMENTE con el código HTML completo, sin explicaciones ni bloques de código markdown. Empieza directamente con <!DOCTYPE html>.""",
+## Dependencias CDN permitidas
+```html
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+```
+
+Responde ÚNICAMENTE con el código HTML completo. Sin explicaciones, sin bloques markdown. Empieza directamente con <!DOCTYPE html>.""",
 
     "excel": """Genera datos estructurados en formato JSON para crear un archivo Excel.
 
