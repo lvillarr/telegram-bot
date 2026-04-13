@@ -1,6 +1,7 @@
 import os
 import io
 import json
+import time
 import base64
 import tempfile
 import anthropic
@@ -121,13 +122,23 @@ client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
 
 def claude_response(system: str, user_msg: str, max_tokens: int = 512) -> str:
-    response = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=max_tokens,
-        system=system,
-        messages=[{"role": "user", "content": user_msg}]
-    )
-    return response.content[0].text
+    last_error = None
+    for attempt in range(3):
+        try:
+            response = client.messages.create(
+                model="claude-haiku-4-5-20251001",
+                max_tokens=max_tokens,
+                system=system,
+                messages=[{"role": "user", "content": user_msg}]
+            )
+            return response.content[0].text
+        except anthropic.APIStatusError as e:
+            last_error = e
+            if e.status_code == 500 and attempt < 2:
+                time.sleep(2 ** attempt)  # 1s, 2s
+                continue
+            raise
+    raise last_error
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
