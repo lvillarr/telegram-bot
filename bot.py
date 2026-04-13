@@ -43,12 +43,12 @@ def load_prompt(path: str) -> str:
     except FileNotFoundError:
         return ""
 
-BASE_DIR = os.path.join(os.path.dirname(__file__), "proyecto_claude", "Documents", "Proyecto_Claude")
+PROMPTS_DIR = os.path.join(os.path.dirname(__file__), "prompts")
 
-orquestador = load_prompt(os.path.join(BASE_DIR, "orquestador", "CLAUDE.md"))
-agente_td    = load_prompt(os.path.join(BASE_DIR, "agentes", "TD", "CLAUDE.md"))
-agente_ia    = load_prompt(os.path.join(BASE_DIR, "agentes", "IA", "CLAUDE.md"))
-agente_eo    = load_prompt(os.path.join(BASE_DIR, "agentes", "EO", "CLAUDE.md"))
+orquestador = load_prompt(os.path.join(PROMPTS_DIR, "orquestador.md"))
+agente_td    = load_prompt(os.path.join(PROMPTS_DIR, "agente_td.md"))
+agente_ia    = load_prompt(os.path.join(PROMPTS_DIR, "agente_ia.md"))
+agente_eo    = load_prompt(os.path.join(PROMPTS_DIR, "agente_eo.md"))
 
 REGLAS_GENERALES = """
 ---
