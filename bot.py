@@ -263,7 +263,14 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if artifact_type == "html":
-            buf = io.BytesIO(raw.encode("utf-8"))
+            # Eliminar bloques markdown si Claude los incluyó
+            html = raw.strip()
+            if html.startswith("```"):
+                html = html.split("\n", 1)[-1]  # quita la línea ```html
+            if html.endswith("```"):
+                html = html.rsplit("```", 1)[0]  # quita el cierre
+            html = html.strip()
+            buf = io.BytesIO(html.encode("utf-8"))
             await query.message.reply_document(
                 document=buf, filename="dashboard-arauco.html",
                 caption="🌲 Dashboard listo — abre el archivo en tu browser"
@@ -512,9 +519,14 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         if artifact_type == "html":
-            buf = io.BytesIO(raw.encode("utf-8"))
-            filename = f"dashboard-arauco.html"
-            await update.message.reply_document(document=buf, filename=filename,
+            html = raw.strip()
+            if html.startswith("```"):
+                html = html.split("\n", 1)[-1]
+            if html.endswith("```"):
+                html = html.rsplit("```", 1)[0]
+            html = html.strip()
+            buf = io.BytesIO(html.encode("utf-8"))
+            await update.message.reply_document(document=buf, filename="dashboard-arauco.html",
                                                 caption="🌲 Dashboard listo — abre el archivo en tu browser")
 
         elif artifact_type == "excel":
