@@ -75,7 +75,24 @@ Si un término técnico coincide con estas palabras (ej. "peak" en estadística)
 - Si recibes imagen o documento, analiza en contexto forestal Arauco
 """
 
+IDENTIDAD = """
+# Identidad del sistema — leer antes de responder cualquier pregunta sobre quién eres
+
+Eres el **asistente digital de la Subgerencia de Mejora Continua de Arauco**, una empresa forestal-industrial chilena. NO eres un asistente genérico. Representas a un equipo de tres agentes especializados coordinados por un orquestador:
+
+- **Orquestador (Subgerente MC):** lidera estratégicamente, delega y sintetiza resultados con criterio McKinsey/BCG
+- **Agente EO — Excelencia Operacional:** Lean, GEMBA, KAIZEN, BPMN, KPIs, A3, OEE, gestión de procesos forestales
+- **Agente IA — Inteligencia Artificial:** modelos predictivos, GenAI con Claude API, LangGraph, cartografía con IA, dashboards
+- **Agente TD — Transformación Digital:** integraciones de sistemas (SAP, SGL, Planex, Forest Data), telemetría de maquinaria forestal, ETL, arquitecturas de datos
+
+Cuando el usuario te pregunte qué eres, qué haces o cómo funcionas, describe ÚNICAMENTE estos cuatro roles con sus capacidades reales. No inventes roles, agentes ni capacidades que no estén listados arriba.
+
+"""
+
 SYSTEM_PROMPT = f"""
+{IDENTIDAD}
+---
+
 {orquestador}
 
 ---
@@ -587,8 +604,42 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 from telegram import BotCommand
 
+START_TEXT = """🌲 *Arauco — Subgerencia de Mejora Continua*
+
+Soy el asistente digital de tu equipo. Integro tres agentes especializados coordinados por el Subgerente de Mejora Continua:
+
+🏭 *Agente EO — Excelencia Operacional*
+Lean, GEMBA, KAIZEN, BPMN 2\.0, KPIs, OEE, A3/PDCA, rediseño de procesos forestales
+
+🤖 *Agente IA — Inteligencia Artificial*
+Modelos predictivos \(ML/XGBoost\), GenAI con Claude API, LangGraph, cartografía con IA, dashboards HTML
+
+⚙️ *Agente TD — Transformación Digital*
+Integraciones SAP/SGL/Planex/Forest Data, telemetría de maquinaria forestal \(Tigercat, John Deere, Develon\), ETL, arquitecturas de datos
+
+🧭 *Orquestador \(Subgerente MC\)*
+Coordina los agentes, sintetiza resultados y entrega análisis ejecutivos estilo McKinsey/BCG
+
+---
+
+*Comandos disponibles:*
+/spec — Especificación de iniciativa
+/plan — Plan de ejecución
+/build — Construcción de solución
+/test — Validación operacional
+/review — Revisión crítica
+/ship — Lanzamiento a operación
+/artifact — Genera Excel, gráfico o dashboard HTML
+
+También puedes enviar una imagen, PDF, Word o Excel y los agentes lo analizarán\."""
+
+async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(START_TEXT, parse_mode="MarkdownV2")
+
+
 async def post_init(application):
     await application.bot.set_my_commands([
+        BotCommand("start",    "🌲 Qué soy y cómo funciono"),
         BotCommand("spec",     "📋 Especificación de iniciativa forestal"),
         BotCommand("plan",     "🗺️ Plan de ejecución forestal"),
         BotCommand("build",    "🔨 Construcción de solución forestal"),
@@ -599,6 +650,8 @@ async def post_init(application):
     ])
 
 app = ApplicationBuilder().token(os.environ["TELEGRAM_TOKEN"]).post_init(post_init).build()
+
+app.add_handler(CommandHandler("start", start_handler))
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
