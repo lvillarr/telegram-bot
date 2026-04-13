@@ -9,8 +9,8 @@ import openpyxl
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters
-from telegram import Update
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 # Lee todos los agentes desde el submódulo proyecto_claude
@@ -141,9 +141,21 @@ def claude_response(system: str, user_msg: str, max_tokens: int = 512) -> str:
     raise last_error
 
 
+ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("📊 Excel",   callback_data="art_excel"),
+    InlineKeyboardButton("📈 Gráfico", callback_data="art_chart"),
+    InlineKeyboardButton("🌐 HTML",    callback_data="art_html"),
+]])
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = claude_response(SYSTEM_PROMPT, update.message.text)
-    await update.message.reply_text(reply)
+    context.user_data["last_analysis"] = reply
+    await update.message.reply_text(
+        reply + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
+        reply_markup=ARTIFACT_KEYBOARD,
+        parse_mode="Markdown"
+    )
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -165,7 +177,62 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
             ]
         }]
     )
-    await update.message.reply_text(response.content[0].text)
+    analysis = response.content[0].text
+    context.user_data["last_analysis"] = analysis
+
+    await update.message.reply_text(
+        analysis + "\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
+        reply_markup=ARTIFACT_KEYBOARD,
+        parse_mode="Markdown"
+    )
+
+
+async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    artifact_type = query.data.replace("art_", "")
+    last_analysis = context.user_data.get("last_analysis", "")
+
+    if not last_analysis:
+        await query.edit_message_text("⚠️ No hay análisis previo. Envía una imagen o un mensaje primero.")
+        return
+
+    await query.edit_message_reply_markup(reply_markup=None)
+    await query.message.reply_text(f"⏳ Generando *{artifact_type}*...", parse_mode="Markdown")
+
+    description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
+    system = SYSTEM_PROMPT + "\n\n" + ARTIFACT_PROMPTS[artifact_type]
+    raw = claude_response(system, description, max_tokens=2000)
+
+    try:
+        if artifact_type == "html":
+            buf = io.BytesIO(raw.encode("utf-8"))
+            await query.message.reply_document(
+                document=buf, filename="dashboard-arauco.html",
+                caption="🌲 Dashboard listo — abre el archivo en tu browser"
+            )
+        elif artifact_type == "excel":
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_excel(data)
+            filename = f"arauco-{data.get('titulo','datos').lower().replace(' ','-')[:30]}.xlsx"
+            await query.message.reply_document(
+                document=buf, filename=filename,
+                caption="📊 Excel generado con datos del análisis forestal"
+            )
+        elif artifact_type == "chart":
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_chart(data)
+            await query.message.reply_photo(
+                photo=buf,
+                caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua"
+            )
+    except json.JSONDecodeError:
+        await query.message.reply_text("⚠️ Error al procesar. Intenta de nuevo.")
+    except Exception as e:
+        await query.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
 
 
 async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -404,6 +471,7 @@ for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
 
 app.add_handler(CommandHandler("artifact", artifact_handler))
+app.add_handler(CallbackQueryHandler(artifact_callback, pattern="^art_"))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
