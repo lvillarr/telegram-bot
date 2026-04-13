@@ -374,7 +374,20 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Error generando el artefacto: {str(e)[:200]}")
 
 
-app = ApplicationBuilder().token(os.environ["TELEGRAM_TOKEN"]).build()
+from telegram import BotCommand
+
+async def post_init(application):
+    await application.bot.set_my_commands([
+        BotCommand("spec",     "📋 Especificación de iniciativa forestal"),
+        BotCommand("plan",     "🗺️ Plan de ejecución forestal"),
+        BotCommand("build",    "🔨 Construcción de solución forestal"),
+        BotCommand("test",     "🧪 Validación en operación forestal"),
+        BotCommand("review",   "🔍 Revisión crítica forestal"),
+        BotCommand("ship",     "🚀 Lanzamiento a operación forestal"),
+        BotCommand("artifact", "🎨 Genera HTML, Excel o gráfico PNG"),
+    ])
+
+app = ApplicationBuilder().token(os.environ["TELEGRAM_TOKEN"]).post_init(post_init).build()
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
