@@ -1,5 +1,6 @@
 import os
 import io
+import re
 import json
 import time
 import base64
@@ -14,6 +15,25 @@ from docx import Document as DocxDocument
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
+
+def fmt(text: str) -> str:
+    """Convierte markdown estándar a formato compatible con Telegram (parse_mode=Markdown)."""
+    # Encabezados → negrita con separador visual
+    text = re.sub(r'^#{3,}\s+(.+)$',  r'*\1*',       text, flags=re.MULTILINE)  # ### → *bold*
+    text = re.sub(r'^#{2}\s+(.+)$',   r'\n*\1*',      text, flags=re.MULTILINE)  # ## → negrita con salto
+    text = re.sub(r'^#{1}\s+(.+)$',   r'\n*━━ \1 ━━*', text, flags=re.MULTILINE) # # → negrita con línea
+
+    # **negrita** → *negrita* (Telegram usa asterisco simple)
+    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+
+    # Líneas horizontales --- o === → separador visual
+    text = re.sub(r'^[-=]{3,}\s*$', '─────────────', text, flags=re.MULTILINE)
+
+    # Limpiar líneas vacías múltiples (máx 2 seguidas)
+    text = re.sub(r'\n{3,}', '\n\n', text)
+
+    return text.strip()
+
 
 # Lee todos los agentes desde el submódulo proyecto_claude
 def load_prompt(path: str) -> str:
@@ -73,6 +93,11 @@ Si un término técnico coincide con estas palabras (ej. "peak" en estadística)
 - Usa emojis para estructurar 🌲🪵🚛🛠️📊
 - Máximo 3-4 párrafos salvo que se pida detalle
 - Si recibes imagen o documento, analiza en contexto forestal Arauco
+- **IMPORTANTE — formato de texto:** Telegram NO renderiza encabezados markdown (`#`, `##`, `###`). Para estructurar tu respuesta usa:
+  - `*Negrita*` para secciones principales (NO uses `#`)
+  - Emojis al inicio de sección en vez de `#`
+  - Guiones `-` para listas
+  - Nunca uses `**texto**` (doble asterisco) — usa `*texto*` (asterisco simple)
 """
 
 IDENTIDAD = """
@@ -254,7 +279,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply = claude_response(SYSTEM_PROMPT, update.message.text, model=get_model(context))
     context.user_data["last_analysis"] = reply
     await update.message.reply_text(
-        reply + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
+        fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
         reply_markup=ARTIFACT_KEYBOARD,
         parse_mode="Markdown"
     )
@@ -283,7 +308,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["last_analysis"] = analysis
 
     await update.message.reply_text(
-        analysis + "\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
+        fmt(analysis) + "\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
         reply_markup=ARTIFACT_KEYBOARD,
         parse_mode="Markdown"
     )
@@ -372,7 +397,7 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     skill_system = SYSTEM_PROMPT + "\n\n" + SKILL_PROMPTS[command]
     reply = claude_response(skill_system, args, max_tokens=800, model=get_model(context))
-    await update.message.reply_text(reply)
+    await update.message.reply_text(fmt(reply), parse_mode="Markdown")
 
 
 ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo visual y lo envía aquí
@@ -698,7 +723,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["last_analysis"] = analysis
 
     await update.message.reply_text(
-        f"📄 *{doc.file_name}*\n\n{analysis}\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
+        f"📄 *{doc.file_name}*\n\n{fmt(analysis)}\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
         reply_markup=ARTIFACT_KEYBOARD,
         parse_mode="Markdown"
     )
