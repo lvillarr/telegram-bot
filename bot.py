@@ -6,9 +6,11 @@ import base64
 import tempfile
 import anthropic
 import openpyxl
+import pdfplumber
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from docx import Document as DocxDocument
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
@@ -452,6 +454,100 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Error generando el artefacto: {str(e)[:200]}")
 
 
+SUPPORTED_DOCS = {".pdf", ".docx", ".xlsx"}
+
+def extract_pdf(data: bytes) -> str:
+    """Extrae texto de un PDF (máx. 10 páginas)."""
+    parts = []
+    with pdfplumber.open(io.BytesIO(data)) as pdf:
+        for page in pdf.pages[:10]:
+            text = page.extract_text()
+            if text:
+                parts.append(text)
+            for table in page.extract_tables():
+                for row in table:
+                    parts.append(" | ".join(str(c or "") for c in row))
+    return "\n\n".join(parts)
+
+
+def extract_docx(data: bytes) -> str:
+    """Extrae texto y tablas de un documento Word."""
+    doc = DocxDocument(io.BytesIO(data))
+    parts = []
+    for para in doc.paragraphs:
+        if para.text.strip():
+            parts.append(para.text)
+    for table in doc.tables:
+        for row in table.rows:
+            parts.append(" | ".join(cell.text.strip() for cell in row.cells))
+    return "\n".join(parts)
+
+
+def extract_xlsx(data: bytes) -> str:
+    """Extrae datos de un Excel (máx. 3 hojas, 50 filas por hoja)."""
+    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    parts = []
+    for sheet_name in wb.sheetnames[:3]:
+        ws = wb[sheet_name]
+        parts.append(f"=== Hoja: {sheet_name} ===")
+        for row in ws.iter_rows(max_row=50, values_only=True):
+            if any(c is not None for c in row):
+                parts.append(" | ".join(str(c) if c is not None else "" for c in row))
+    return "\n".join(parts)
+
+
+async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    doc = update.message.document
+    filename = (doc.file_name or "").lower()
+    ext = next((e for e in SUPPORTED_DOCS if filename.endswith(e)), None)
+
+    if not ext:
+        await update.message.reply_text(
+            "📎 Solo proceso *PDF*, *Word (.docx)* y *Excel (.xlsx)*.",
+            parse_mode="Markdown"
+        )
+        return
+
+    await update.message.reply_text("📂 Leyendo archivo...")
+
+    file = await context.bot.get_file(doc.file_id)
+    file_bytes = bytes(await file.download_as_bytearray())
+
+    try:
+        if ext == ".pdf":
+            content = extract_pdf(file_bytes)
+            tipo = "PDF"
+        elif ext == ".docx":
+            content = extract_docx(file_bytes)
+            tipo = "Word"
+        else:
+            content = extract_xlsx(file_bytes)
+            tipo = "Excel"
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ No pude leer el archivo: {str(e)[:200]}")
+        return
+
+    if not content.strip():
+        await update.message.reply_text("⚠️ El archivo no tiene contenido extraíble.")
+        return
+
+    await update.message.reply_text("🤖 Analizando con los agentes...")
+
+    prompt = (
+        f"Analiza este documento {tipo} en el contexto operacional forestal de Arauco. "
+        f"Identifica datos clave, KPIs, procesos, problemas u oportunidades de mejora.\n\n"
+        f"{content[:6000]}"
+    )
+    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800)
+    context.user_data["last_analysis"] = analysis
+
+    await update.message.reply_text(
+        f"📄 *{doc.file_name}*\n\n{analysis}\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
+        reply_markup=ARTIFACT_KEYBOARD,
+        parse_mode="Markdown"
+    )
+
+
 from telegram import BotCommand
 
 async def post_init(application):
@@ -472,6 +568,7 @@ for skill in SKILL_PROMPTS:
 
 app.add_handler(CommandHandler("artifact", artifact_handler))
 app.add_handler(CallbackQueryHandler(artifact_callback, pattern="^art_"))
+app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 

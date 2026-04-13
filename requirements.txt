@@ -2,3 +2,5 @@ python-telegram-bot==21.3
 anthropic
 openpyxl
 matplotlib
+pdfplumber
+python-docx
