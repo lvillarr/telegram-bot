@@ -37,29 +37,46 @@ def fmt(text: str) -> str:
         inline_codes.append(m.group(1))
         return f"\x00INL{len(inline_codes)-1}\x00"
 
+    def _rows_to_pre(raw_rows: list) -> str:
+        """Convierte lista de filas (listas de strings) a bloque <pre> alineado."""
+        if not raw_rows:
+            return ''
+        n_cols = max(len(r) for r in raw_rows)
+        rows   = [r + [''] * (n_cols - len(r)) for r in raw_rows]
+        # Ancho visual: emojis dobles cuentan como 2
+        def vlen(s):
+            w = 0
+            for c in s:
+                w += 2 if ord(c) > 0x2E80 else 1
+            return w
+        widths = [max(vlen(row[c]) for row in rows) for c in range(n_cols)]
+        lines  = []
+        for i, row in enumerate(rows):
+            parts = []
+            for c, cell in enumerate(row):
+                pad = widths[c] - vlen(cell)
+                parts.append(cell + ' ' * pad)
+            lines.append('  '.join(parts).rstrip())
+            if i == 0:
+                lines.append('─' * (sum(widths) + 2 * (n_cols - 1)))
+        # Telegram NO decodifica &gt; dentro de <pre> — solo escapar < y &
+        content = chr(10).join(lines).replace('&', '&amp;').replace('<', '&lt;')
+        return f'<pre>{content}</pre>'
+
     def save_table(m):
         raw_rows = []
         for line in m.group(0).strip().splitlines():
             line = line.strip()
-            if re.match(r'^[|\s:–\-]+$', line):
-                continue                          # fila separadora |---|---|
+            # Fila separadora: |---|---| o |===|===| o +---+---+
+            if re.match(r'^[|\s:=+–\-─]+$', line):
+                continue
             cells = [c.strip() for c in line.strip('|').split('|')]
-            if any(cells):
+            if any(c for c in cells if c):
                 raw_rows.append(cells)
-        if not raw_rows:
+        result = _rows_to_pre(raw_rows)
+        if not result:
             return ''
-        n_cols  = max(len(r) for r in raw_rows)
-        rows    = [r + [''] * (n_cols - len(r)) for r in raw_rows]
-        widths  = [max(len(row[c]) for row in rows) for c in range(n_cols)]
-        lines   = []
-        for i, row in enumerate(rows):
-            lines.append('  '.join(cell.ljust(widths[c]) for c, cell in enumerate(row)).rstrip())
-            if i == 0:
-                lines.append('─' * (sum(widths) + 2 * (n_cols - 1)))
-        # El contenido ya está en texto plano → escapar HTML y envolver en <pre>
-        # Telegram NO decodifica &gt; dentro de <pre> — solo escapar < y &
-        content = chr(10).join(lines).replace('&', '&amp;').replace('<', '&lt;')
-        tables.append(f'<pre>{content}</pre>')
+        tables.append(result)
         return f"\x00TBL{len(tables)-1}\x00"
 
     text = re.sub(r'```[a-z]*\n?(.*?)```', save_block,  text, flags=re.DOTALL)
@@ -168,13 +185,13 @@ Si un término técnico coincide con estas palabras (ej. "peak" en estadística)
   - `## Sección` o `### Subsección` para encabezados
   - `**texto**` para negrita (doble asterisco)
   - Guiones `-` para listas
-  - **Tablas:** SIEMPRE usa formato markdown con pipes `|` cuando presentes datos tabulares:
-    ```
-    | Columna 1 | Columna 2 | Columna 3 |
-    |-----------|-----------|-----------|
-    | valor 1   | valor 2   | valor 3   |
-    ```
-    Nunca uses espacios o tabs para alinear tablas manualmente — usa siempre pipes `|`.
+  - **TABLAS — REGLA OBLIGATORIA:** Cuando presentes cualquier dato tabular, comparación, matriz o resumen con columnas, DEBES usar SIEMPRE el formato markdown con pipes. NUNCA uses ==, espacios o cualquier otro separador. Formato correcto:
+
+| Columna 1 | Columna 2 | Columna 3 |
+|-----------|-----------|-----------|
+| valor 1   | valor 2   | valor 3   |
+
+  Si el usuario pide una tabla, si haces un resumen de fases/estados/responsables, o si presentas datos comparativos: SIEMPRE formato pipes `|`. Esto es no negociable.
   - Bloques de código con triple backtick ``` para código o datos técnicos
 """
 
