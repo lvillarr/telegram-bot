@@ -6,6 +6,7 @@ import time
 import base64
 import tempfile
 import anthropic
+import groq as groq_lib
 import openpyxl
 import pdfplumber
 import matplotlib
@@ -199,7 +200,8 @@ Actúa como el Subgerente de Mejora Continua. Define el plan de entrega y puesta
 - 🔄 Plan de rollback y contingencia operacional si falla en terreno""",
 }
 
-client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+client      = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
+groq_client = groq_lib.Groq(api_key=os.environ["GROQ_API_KEY"])
 
 MAX_HISTORY = 20  # máximo de mensajes (turnos usuario+asistente) a conservar
 
@@ -701,6 +703,51 @@ def extract_xlsx(data: bytes) -> str:
     return "\n".join(parts)
 
 
+async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Transcribe un mensaje de voz o audio con Groq Whisper y lo procesa con Claude."""
+    # Soporta mensajes de voz (micrófono) y archivos de audio
+    voice = update.message.voice or update.message.audio
+    if not voice:
+        return
+
+    await update.message.reply_text("🎙️ Transcribiendo audio...")
+
+    file = await context.bot.get_file(voice.file_id)
+    file_bytes = bytes(await file.download_as_bytearray())
+
+    # Groq Whisper requiere un archivo con nombre y extensión
+    ext = ".ogg" if update.message.voice else ".mp3"
+    try:
+        transcription = groq_client.audio.transcriptions.create(
+            model="whisper-large-v3",
+            file=(f"audio{ext}", io.BytesIO(file_bytes)),
+            language="es",
+            response_format="text",
+        )
+        transcript = transcription.strip() if isinstance(transcription, str) else transcription.text.strip()
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error al transcribir el audio: {str(e)[:200]}")
+        return
+
+    if not transcript:
+        await update.message.reply_text("⚠️ No pude entender el audio. Intenta de nuevo.")
+        return
+
+    await update.message.reply_text(f"🗣️ *Transcripción:* _{transcript}_", parse_mode="Markdown")
+    await update.message.reply_text("🤖 Analizando con los agentes...")
+
+    history = context.user_data.get("history", [])
+    reply = claude_response(SYSTEM_PROMPT, transcript, max_tokens=600, model=get_model(context), history=history)
+    push_history(context, transcript, reply)
+    context.user_data["last_analysis"] = reply
+
+    await update.message.reply_text(
+        fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
+        reply_markup=ARTIFACT_KEYBOARD,
+        parse_mode="Markdown"
+    )
+
+
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
     filename = (doc.file_name or "").lower()
@@ -832,6 +879,8 @@ for skill in SKILL_PROMPTS:
 
 app.add_handler(CommandHandler("artifact", artifact_handler))
 app.add_handler(CallbackQueryHandler(artifact_callback, pattern="^art_"))
+app.add_handler(MessageHandler(filters.VOICE, handle_audio))
+app.add_handler(MessageHandler(filters.AUDIO, handle_audio))
 app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
