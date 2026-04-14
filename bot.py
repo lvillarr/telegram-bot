@@ -18,15 +18,32 @@ from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, Cal
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
+def _clean_heading(content: str) -> str:
+    """Elimina asteriscos existentes del contenido de un encabezado para evitar anidamiento."""
+    return re.sub(r'\*+', '', content).strip()
+
 def fmt(text: str) -> str:
     """Convierte markdown estándar a formato compatible con Telegram (parse_mode=Markdown)."""
-    # Encabezados → negrita con separador visual
-    text = re.sub(r'^#{3,}\s+(.+)$',  r'*\1*',       text, flags=re.MULTILINE)  # ### → *bold*
-    text = re.sub(r'^#{2}\s+(.+)$',   r'\n*\1*',      text, flags=re.MULTILINE)  # ## → negrita con salto
-    text = re.sub(r'^#{1}\s+(.+)$',   r'\n*━━ \1 ━━*', text, flags=re.MULTILINE) # # → negrita con línea
+    # Bloques de código: eliminar los delimitadores ``` para evitar problemas de parseo
+    # (Telegram los renderiza, pero si quedan mal cerrados rompen todo el mensaje)
+    text = re.sub(r'```[a-z]*\n', '```\n', text)   # normaliza ``` con lenguaje
 
-    # **negrita** → *negrita* (Telegram usa asterisco simple)
+    # **negrita** → *negrita* ANTES de procesar encabezados
     text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+
+    # Encabezados: limpiar asteriscos internos antes de envolver en *...*
+    text = re.sub(
+        r'^#{3,}\s+(.+)$',
+        lambda m: f'*{_clean_heading(m.group(1))}*',
+        text, flags=re.MULTILINE)
+    text = re.sub(
+        r'^#{2}\s+(.+)$',
+        lambda m: f'\n*{_clean_heading(m.group(1))}*',
+        text, flags=re.MULTILINE)
+    text = re.sub(
+        r'^#{1}\s+(.+)$',
+        lambda m: f'\n*━━ {_clean_heading(m.group(1))} ━━*',
+        text, flags=re.MULTILINE)
 
     # Líneas horizontales --- o === → separador visual
     text = re.sub(r'^[-=]{3,}\s*$', '─────────────', text, flags=re.MULTILINE)
