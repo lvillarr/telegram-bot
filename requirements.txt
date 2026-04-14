@@ -1,6 +1,8 @@
 python-telegram-bot==21.3
 anthropic
 groq
+voyageai
+chromadb
 openpyxl
 matplotlib
 pdfplumber

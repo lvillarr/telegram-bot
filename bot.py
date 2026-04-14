@@ -7,6 +7,7 @@ import base64
 import tempfile
 import anthropic
 import groq as groq_lib
+import rag
 import openpyxl
 import pdfplumber
 import matplotlib
@@ -251,6 +252,14 @@ ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("🌐 HTML",    callback_data="art_html"),
 ]])
 
+DOC_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("📊 Excel",          callback_data="art_excel"),
+    InlineKeyboardButton("📈 Gráfico",        callback_data="art_chart"),
+    InlineKeyboardButton("🌐 HTML",           callback_data="art_html"),
+], [
+    InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
+]])
+
 MODELS = {
     "haiku":  ("claude-haiku-4-5-20251001", "⚡ Haiku",  "Rápido y económico"),
     "sonnet": ("claude-sonnet-4-6",          "🧠 Sonnet", "Balanceado"),
@@ -300,8 +309,10 @@ async def modelo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
     try:
-        history = context.user_data.get("history", [])
-        reply = claude_response(SYSTEM_PROMPT, user_msg, model=get_model(context), history=history)
+        history    = context.user_data.get("history", [])
+        rag_ctx    = rag.build_context(user_msg)
+        system     = SYSTEM_PROMPT + rag_ctx
+        reply = claude_response(system, user_msg, model=get_model(context), history=history)
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
         try:
@@ -752,8 +763,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("🤖 Analizando con los agentes...")
 
     try:
-        history = context.user_data.get("history", [])
-        reply = claude_response(SYSTEM_PROMPT, transcript, max_tokens=600,
+        history  = context.user_data.get("history", [])
+        rag_ctx  = rag.build_context(transcript)
+        system   = SYSTEM_PROMPT + rag_ctx
+        reply = claude_response(system, transcript, max_tokens=600,
                                 model=get_model(context), history=history)
         push_history(context, transcript, reply)
         context.user_data["last_analysis"] = reply
@@ -820,10 +833,78 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
     push_history(context, prompt, analysis)
     context.user_data["last_analysis"] = analysis
+    # Guarda contenido completo para indexar si el usuario lo solicita
+    context.user_data["pending_index"] = {"filename": doc.file_name, "content": content}
 
+    try:
+        await update.message.reply_text(
+            f"📄 *{doc.file_name}*\n\n{fmt(analysis)}\n\n"
+            "🎨 *¿Qué deseas hacer con este documento?*",
+            reply_markup=DOC_KEYBOARD,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        await update.message.reply_text(
+            f"📄 {doc.file_name}\n\n{analysis}\n\n¿Qué deseas hacer?",
+            reply_markup=DOC_KEYBOARD
+        )
+
+
+async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Indexa el último documento analizado en ChromaDB."""
+    query = update.callback_query
+    await query.answer()
+
+    pending = context.user_data.get("pending_index")
+    if not pending:
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text("⚠️ No hay documento pendiente de indexar.")
+        return
+
+    await query.edit_message_reply_markup(reply_markup=None)
+    await query.message.reply_text(f"⏳ Indexando *{pending['filename']}*...", parse_mode="Markdown")
+
+    try:
+        n = rag.index_document(pending["content"], pending["filename"])
+        context.user_data.pop("pending_index", None)
+        await query.message.reply_text(
+            f"✅ *{pending['filename']}* indexado correctamente.\n"
+            f"_{n} fragmentos almacenados en la base de conocimiento._\n\n"
+            "Ahora puedo usar este documento para responder preguntas.",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await query.message.reply_text(f"⚠️ Error al indexar: {str(e)[:200]}")
+
+
+async def documentos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Lista todos los documentos indexados en RAG."""
+    try:
+        docs = rag.list_documents()
+        if not docs:
+            await update.message.reply_text(
+                "📚 La base de conocimiento está vacía.\n"
+                "Sube un PDF, Word o Excel y presiona *📚 Indexar en RAG*.",
+                parse_mode="Markdown"
+            )
+            return
+        lista = "\n".join(f"• {d}" for d in docs)
+        await update.message.reply_text(
+            f"📚 *Documentos indexados ({len(docs)}):*\n\n{lista}",
+            parse_mode="Markdown"
+        )
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
+
+
+async def indexar_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Instrucción para indexar documentos."""
     await update.message.reply_text(
-        f"📄 *{doc.file_name}*\n\n{fmt(analysis)}\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
-        reply_markup=ARTIFACT_KEYBOARD,
+        "📚 *Indexar documento*\n\n"
+        "Envía un archivo *PDF*, *Word (.docx)* o *Excel (.xlsx)* "
+        "y al finalizar el análisis presiona el botón *📚 Indexar en RAG*.\n\n"
+        "El documento quedará disponible para que los agentes lo consulten "
+        "automáticamente al responder preguntas.",
         parse_mode="Markdown"
     )
 
@@ -876,16 +957,18 @@ async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def post_init(application):
     await application.bot.set_my_commands([
-        BotCommand("start",    "🌲 Qué soy y cómo funciono"),
-        BotCommand("reset",    "🔄 Reiniciar conversación (borrar contexto)"),
-        BotCommand("modelo",   "🤖 Seleccionar modelo LLM (Haiku / Sonnet / Opus)"),
-        BotCommand("spec",     "📋 Especificación de iniciativa forestal"),
-        BotCommand("plan",     "🗺️ Plan de ejecución forestal"),
-        BotCommand("build",    "🔨 Construcción de solución forestal"),
-        BotCommand("test",     "🧪 Validación en operación forestal"),
-        BotCommand("review",   "🔍 Revisión crítica forestal"),
-        BotCommand("ship",     "🚀 Lanzamiento a operación forestal"),
-        BotCommand("artifact", "🎨 Genera HTML, Excel o gráfico PNG"),
+        BotCommand("start",       "🌲 Qué soy y cómo funciono"),
+        BotCommand("reset",       "🔄 Reiniciar conversación"),
+        BotCommand("modelo",      "🤖 Seleccionar modelo LLM"),
+        BotCommand("indexar",     "📚 Cómo indexar documentos en RAG"),
+        BotCommand("documentos",  "📂 Ver documentos indexados"),
+        BotCommand("spec",        "📋 Especificación de iniciativa forestal"),
+        BotCommand("plan",        "🗺️ Plan de ejecución forestal"),
+        BotCommand("build",       "🔨 Construcción de solución forestal"),
+        BotCommand("test",        "🧪 Validación en operación forestal"),
+        BotCommand("review",      "🔍 Revisión crítica forestal"),
+        BotCommand("ship",        "🚀 Lanzamiento a operación forestal"),
+        BotCommand("artifact",    "🎨 Genera HTML, Excel o gráfico PNG"),
     ])
 
 app = (
@@ -895,10 +978,13 @@ app = (
     .build()
 )
 
-app.add_handler(CommandHandler("start", start_handler))
-app.add_handler(CommandHandler("reset", reset_handler))
-app.add_handler(CommandHandler("modelo", modelo_handler))
-app.add_handler(CallbackQueryHandler(modelo_callback, pattern="^mdl_"))
+app.add_handler(CommandHandler("start",      start_handler))
+app.add_handler(CommandHandler("reset",      reset_handler))
+app.add_handler(CommandHandler("modelo",     modelo_handler))
+app.add_handler(CommandHandler("indexar",    indexar_handler))
+app.add_handler(CommandHandler("documentos", documentos_handler))
+app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
+app.add_handler(CallbackQueryHandler(rag_index_callback, pattern="^rag_index$"))
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
