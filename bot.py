@@ -641,7 +641,7 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    artifact_tokens = 10000 if artifact_type == "html" else 2000
+    artifact_tokens = 16000 if artifact_type == "html" else 2000
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
@@ -792,6 +792,17 @@ Adapta columnas y datos al contexto del análisis. Alterna filas blanco/crema (`
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 ```
 
+## Orden de generación OBLIGATORIO (para evitar cortes)
+
+Genera el HTML en este orden exacto — no lo alteres:
+1. `<!DOCTYPE html>` + `<head>` con CSS completo
+2. `<body>` → navbar → KPI cards → gráficos (`<canvas>`)
+3. **`<script>` con TODO el código Chart.js** (aquí, antes de las tablas)
+4. Tablas de datos (después del script)
+5. Footer + `</body></html>`
+
+Si el script va al final y el archivo se corta, los gráficos quedan vacíos. Por eso va ANTES de las tablas.
+
 Responde ÚNICAMENTE con el código HTML completo. Sin explicaciones, sin bloques markdown. Empieza directamente con <!DOCTYPE html>.""",
 
     "excel": """Genera datos estructurados en formato JSON para crear un archivo Excel.
@@ -929,7 +940,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⏳ Generando artefacto *{artifact_type}*...", parse_mode="Markdown")
 
     artifact_model = "claude-sonnet-4-6"
-    artifact_tokens = 6000 if artifact_type == "html" else 2000
+    artifact_tokens = 16000 if artifact_type == "html" else 2000
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
@@ -1060,9 +1071,21 @@ def extract_xlsx(data: bytes) -> tuple[str, dict]:
                 cnt = Counter(str(v) for v in vals)
                 stats[col_name] = {"tipo": "cat", "frecuencias": dict(cnt.most_common(15))}
 
-        # Top-20 filas por primera columna numérica (si existe)
-        num_col = next((i for i, h in enumerate(headers)
-                        if h in stats and stats[h]["tipo"] == "num"), None)
+        # Muestra representativa: top-20 por la columna numérica de mayor promedio
+        # (excluye columnas tipo ID donde max ≈ total de filas)
+        num_col = None
+        best_score, best_i = -1, None
+        for i, h in enumerate(headers):
+            if h in stats and stats[h]["tipo"] == "num":
+                s = stats[h]
+                # Columnas tipo ID tienen prom ≈ total/2 y valores únicos = total
+                # Columnas de métricas tienen mayor dispersión relativa
+                if s["total"] > 0 and s["max"] > 0:
+                    score = s["prom"] / max(s["max"], 1)   # < 1 siempre; IDs tienden a 0.5
+                    # Preferir columnas donde la media es > 10% del máximo (métricas reales)
+                    if score > best_score and s["max"] < 1e8:
+                        best_score, best_i = score, i
+        num_col = best_i
         if num_col is not None:
             try:
                 top20 = sorted(all_rows, key=lambda r: float(str(r[num_col] or 0).replace(",", ".")), reverse=True)[:20]
