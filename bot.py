@@ -117,21 +117,65 @@ def fmt(text: str) -> str:
         inline_codes.append(m.group(1))
         return f"\x00INL{len(inline_codes)-1}\x00"
 
-    def _rows_to_pre(raw_rows: list) -> str:
+    def _rows_to_output(raw_rows: list) -> str:
+        """
+        Convierte filas a la mejor representación para Telegram.
+        - Tablas angostas (≤ 40 chars): <pre> monoespaciado alineado
+        - Tablas anchas o de 3+ cols: lista con negrita (sin fondo gris)
+        """
         if not raw_rows:
             return ''
-        n_cols = max(len(r) for r in raw_rows)
-        rows   = [r + [''] * (n_cols - len(r)) for r in raw_rows]
-        def vlen(s):   # ancho visual (emojis = 2)
+
+        # Limpia marcadores markdown de cada celda (** __ * _)
+        def strip_md(s: str) -> str:
+            s = re.sub(r'\*{2,3}([^*]*)\*{2,3}', r'\1', s)
+            s = re.sub(r'\*([^*\n]+)\*',           r'\1', s)
+            s = re.sub(r'__([^_]*)__',              r'\1', s)
+            s = re.sub(r'_([^_\n]+)_',              r'\1', s)
+            return s.strip()
+
+        def vlen(s: str) -> int:   # ancho visual (emojis CJK = 2)
             return sum(2 if ord(c) > 0x2E80 else 1 for c in s)
+
+        n_cols = max(len(r) for r in raw_rows)
+        rows   = [[strip_md(c) for c in r] + [''] * (n_cols - len(r))
+                  for r in raw_rows]
         widths = [max(vlen(row[c]) for row in rows) for c in range(n_cols)]
-        lines  = []
+        total_w = sum(widths) + 2 * (n_cols - 1)
+
+        # ── Tabla ancha o ≥ 3 columnas → lista formateada (sin fondo gris) ──
+        MOBILE_MAX = 36   # ~chars visibles en móvil dentro de <pre>
+        if total_w > MOBILE_MAX or n_cols >= 3:
+            header = rows[0]
+            data   = rows[1:]
+            if not data:        # solo header → vuelve a <pre> simple
+                data = [header]
+                header = []
+
+            parts = []
+            for row in data:
+                if n_cols == 2:
+                    key = _html.escape(row[0])
+                    val = _html.escape(row[1])
+                    parts.append(f'▸ <b>{key}</b>  {val}')
+                elif n_cols >= 3:
+                    key  = _html.escape(row[0])
+                    val1 = _html.escape(row[1])
+                    val2 = _html.escape(row[2]) if len(row) > 2 else ''
+                    line = f'▸ <b>{key}</b> — {val1}'
+                    if val2:
+                        line += f'\n   <i>{val2}</i>'
+                    parts.append(line)
+            return '\n'.join(parts)
+
+        # ── Tabla angosta → <pre> alineado ───────────────────────────────────
+        lines = []
         for i, row in enumerate(rows):
             parts = [cell + ' ' * (widths[c] - vlen(cell))
                      for c, cell in enumerate(row)]
             lines.append('  '.join(parts).rstrip())
             if i == 0:
-                lines.append('─' * (sum(widths) + 2 * (n_cols - 1)))
+                lines.append('─' * total_w)
         content = chr(10).join(lines).replace('&', '&amp;').replace('<', '&lt;')
         return f'<pre>{content}</pre>'
 
@@ -144,7 +188,7 @@ def fmt(text: str) -> str:
             cells = [c.strip() for c in line.strip('|').split('|')]
             if any(c for c in cells if c):
                 raw_rows.append(cells)
-        result = _rows_to_pre(raw_rows)
+        result = _rows_to_output(raw_rows)
         if not result:
             return ''
         tables.append(result)
