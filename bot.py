@@ -862,7 +862,11 @@ async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     await query.edit_message_reply_markup(reply_markup=None)
-    await query.message.reply_text(f"⏳ Indexando *{pending['filename']}*...", parse_mode="Markdown")
+    await query.message.reply_text(
+        f"⏳ Indexando *{pending['filename']}*...\n"
+        "_Documentos grandes pueden tardar varios minutos._",
+        parse_mode="Markdown"
+    )
 
     try:
         n = rag.index_document(pending["content"], pending["filename"])

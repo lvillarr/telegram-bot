@@ -3,6 +3,7 @@ RAG — Retrieval Augmented Generation
 Indexa documentos con Voyage AI + ChromaDB y recupera contexto relevante.
 """
 import os
+import time
 import hashlib
 import chromadb
 import voyageai
@@ -37,15 +38,37 @@ def chunk_text(text: str, chunk_size: int = 400, overlap: int = 60) -> list[str]
 
 
 # ── Indexar ───────────────────────────────────────────────────────────────────
+def _embed_with_retry(texts: list, input_type: str, max_retries: int = 5) -> list:
+    """Genera embeddings con reintentos y pausa para respetar rate limits."""
+    for attempt in range(max_retries):
+        try:
+            result = voyage.embed(texts, model=EMBED_MODEL, input_type=input_type)
+            return result.embeddings
+        except Exception as e:
+            msg = str(e).lower()
+            if "rate limit" in msg or "429" in msg or "too many" in msg:
+                wait = 20 * (attempt + 1)   # 20s, 40s, 60s...
+                time.sleep(wait)
+                continue
+            raise
+    raise RuntimeError("Se superó el límite de reintentos de Voyage AI.")
+
+
 def index_document(text: str, filename: str) -> int:
     """Indexa un documento y retorna el número de fragmentos almacenados."""
     chunks = chunk_text(text)
     if not chunks:
         return 0
 
-    # Voyage AI: generar embeddings de los fragmentos
-    result     = voyage.embed(chunks, model=EMBED_MODEL, input_type="document")
-    embeddings = result.embeddings
+    # Procesar en lotes de 8 para no superar rate limits en tier gratuito
+    BATCH = 8
+    all_embeddings = []
+    for i in range(0, len(chunks), BATCH):
+        batch = chunks[i : i + BATCH]
+        embeddings = _embed_with_retry(batch, input_type="document")
+        all_embeddings.extend(embeddings)
+        if i + BATCH < len(chunks):
+            time.sleep(21)   # pausa entre lotes para respetar 3 RPM
 
     # IDs únicos por fragmento (filename + posición + hash del contenido)
     ids = [
@@ -55,7 +78,7 @@ def index_document(text: str, filename: str) -> int:
 
     col.upsert(
         ids        = ids,
-        embeddings = embeddings,
+        embeddings = all_embeddings,
         documents  = chunks,
         metadatas  = [{"filename": filename, "chunk": i} for i in range(len(chunks))]
     )
