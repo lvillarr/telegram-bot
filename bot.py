@@ -21,12 +21,92 @@ from telegram.ext import ContextTypes
 
 
 def fmt(text: str) -> str:
-    """Convierte markdown a HTML para Telegram (parse_mode=HTML).
-    HTML es mucho más robusto que Markdown: maneja tablas, underscores técnicos y
-    code blocks sin riesgo de delimitadores desbalanceados.
-    """
-    # ── 1. Extraer tablas, code blocks e inline code ANTES de escapar HTML ──────
-    #      Se guardan como placeholders para restaurarlos al final ya formateados.
+    """Convierte markdown a HTML para Telegram (parse_mode=HTML)."""
+
+    # ── 0. Pre-procesador: normaliza formatos mixtos que Claude genera ────────
+    #
+    #  Claude tiende a generar:
+    #    | Col1 | Col2 |        ← header en pipes
+    #    |------|------|        ← separador
+    #    ==Clave1==  Valor1    ← datos como ==key== valor
+    #    ==Clave2==  Valor2
+    #
+    #  Este bloque lo detecta y lo convierte TODO a pipe-table para que
+    #  save_table lo procese uniformemente.
+    def normalize_mixed_table(t: str) -> str:
+        EQ_PAT  = re.compile(r'^\s*={2,3}([^=\n]+)={2,3}\s*(.*?)\s*$')
+        PIPE_HDR = re.compile(r'^\s*\|.+\|')
+        PIPE_SEP = re.compile(r'^[\s|:=\-─+]+$')
+
+        lines  = t.splitlines(keepends=True)
+        out    = []
+        i      = 0
+        while i < len(lines):
+            line = lines[i].rstrip('\n')
+
+            # Detecta header pipe (1-2 líneas) seguido de ==key== pairs
+            if PIPE_HDR.match(line):
+                # Recoge header y separador opcional
+                hdr_lines = [line]
+                j = i + 1
+                if j < len(lines) and PIPE_SEP.match(lines[j].rstrip('\n')):
+                    j += 1          # salta el separador |---|
+
+                # ¿Hay al menos 1 línea ==key== justo después?
+                if j < len(lines) and EQ_PAT.match(lines[j].rstrip('\n')):
+                    # Recoge los pares ==key== val
+                    pairs = []
+                    while j < len(lines):
+                        m_eq = EQ_PAT.match(lines[j].rstrip('\n'))
+                        if m_eq:
+                            pairs.append((m_eq.group(1).strip(),
+                                          m_eq.group(2).strip() or '—'))
+                            j += 1
+                        else:
+                            break
+
+                    # Extrae nombres de columnas del header pipe
+                    hdr_cells = [c.strip() for c in
+                                 hdr_lines[0].strip('| \t').split('|')]
+                    col0 = hdr_cells[0] if len(hdr_cells) > 0 else 'Elemento'
+                    col1 = hdr_cells[1] if len(hdr_cells) > 1 else 'Descripción'
+
+                    # Emite pipe-table completa
+                    out.append(f'| {col0} | {col1} |\n')
+                    out.append(f'|---|---|\n')
+                    for k, v in pairs:
+                        out.append(f'| {k} | {v} |\n')
+                    i = j
+                    continue
+
+            # Bloque de ==key== pairs sin header previo (≥2 pares)
+            if EQ_PAT.match(line):
+                pairs = []
+                j = i
+                while j < len(lines):
+                    m_eq = EQ_PAT.match(lines[j].rstrip('\n'))
+                    if m_eq:
+                        pairs.append((m_eq.group(1).strip(),
+                                      m_eq.group(2).strip() or '—'))
+                        j += 1
+                    else:
+                        break
+                if len(pairs) >= 2:
+                    out.append('| Elemento | Descripción |\n')
+                    out.append('|---|---|\n')
+                    for k, v in pairs:
+                        out.append(f'| {k} | {v} |\n')
+                    i = j
+                    continue
+                # Solo 1 par → no table, lo procesa normal
+
+            out.append(lines[i])
+            i += 1
+        return ''.join(out)
+
+    text = normalize_mixed_table(text)
+
+    # ── 1. Extraer code blocks, inline code y tablas ANTES de escapar HTML ────
     code_blocks, inline_codes, tables = [], [], []
 
     def save_block(m):
@@ -38,28 +118,20 @@ def fmt(text: str) -> str:
         return f"\x00INL{len(inline_codes)-1}\x00"
 
     def _rows_to_pre(raw_rows: list) -> str:
-        """Convierte lista de filas (listas de strings) a bloque <pre> alineado."""
         if not raw_rows:
             return ''
         n_cols = max(len(r) for r in raw_rows)
         rows   = [r + [''] * (n_cols - len(r)) for r in raw_rows]
-        # Ancho visual: emojis dobles cuentan como 2
-        def vlen(s):
-            w = 0
-            for c in s:
-                w += 2 if ord(c) > 0x2E80 else 1
-            return w
+        def vlen(s):   # ancho visual (emojis = 2)
+            return sum(2 if ord(c) > 0x2E80 else 1 for c in s)
         widths = [max(vlen(row[c]) for row in rows) for c in range(n_cols)]
         lines  = []
         for i, row in enumerate(rows):
-            parts = []
-            for c, cell in enumerate(row):
-                pad = widths[c] - vlen(cell)
-                parts.append(cell + ' ' * pad)
+            parts = [cell + ' ' * (widths[c] - vlen(cell))
+                     for c, cell in enumerate(row)]
             lines.append('  '.join(parts).rstrip())
             if i == 0:
                 lines.append('─' * (sum(widths) + 2 * (n_cols - 1)))
-        # Telegram NO decodifica &gt; dentro de <pre> — solo escapar < y &
         content = chr(10).join(lines).replace('&', '&amp;').replace('<', '&lt;')
         return f'<pre>{content}</pre>'
 
@@ -67,7 +139,6 @@ def fmt(text: str) -> str:
         raw_rows = []
         for line in m.group(0).strip().splitlines():
             line = line.strip()
-            # Fila separadora: |---|---| o |===|===| o +---+---+
             if re.match(r'^[|\s:=+–\-─]+$', line):
                 continue
             cells = [c.strip() for c in line.strip('|').split('|')]
@@ -83,15 +154,13 @@ def fmt(text: str) -> str:
     text = re.sub(r'`([^`\n]+)`',          save_inline, text)
     text = re.sub(r'(\|[^\n]+\n?){2,}',    save_table,  text)
 
-    # ── 2. Escapar HTML del texto restante (<, >, &) ──────────────────────────
+    # ── 2. Escapar HTML ───────────────────────────────────────────────────────
     text = _html.escape(text)
 
-    # ── 3. Formatos inventados por Claude que deben convertirse ───────────────
-    # ==texto== o ===texto=== → <b>texto</b>  (Claude los usa como "encabezados")
-    text = re.sub(r'={2,3}([^=\n]+)={2,3}', lambda m: f'<b>{m.group(1).strip()}</b>', text)
-    # __texto__ → <b>texto</b>
+    # ── 3. Formatos inventados por Claude → HTML ──────────────────────────────
+    text = re.sub(r'={2,3}([^=\n]+)={2,3}',
+                  lambda m: f'<b>{m.group(1).strip()}</b>', text)
     text = re.sub(r'__([^_\n]+)__', r'<b>\1</b>', text)
-    # _texto_ → <i>texto</i>  (énfasis)
     text = re.sub(r'(?<![_\w])_([^_\n]+)_(?![_\w])', r'<i>\1</i>', text)
 
     # ── 4. **negrita** y *negrita* → <b>…</b> ────────────────────────────────
