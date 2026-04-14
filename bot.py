@@ -16,39 +16,76 @@ import matplotlib.pyplot as plt
 from docx import Document as DocxDocument
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+import html as _html
 from telegram.ext import ContextTypes
 
-def _clean_heading(content: str) -> str:
-    """Elimina asteriscos existentes del contenido de un encabezado para evitar anidamiento."""
-    return re.sub(r'\*+', '', content).strip()
 
 def fmt(text: str) -> str:
-    """Convierte markdown estándar a formato compatible con Telegram (parse_mode=Markdown)."""
-    # Bloques de código: eliminar los delimitadores ``` para evitar problemas de parseo
-    # (Telegram los renderiza, pero si quedan mal cerrados rompen todo el mensaje)
-    text = re.sub(r'```[a-z]*\n', '```\n', text)   # normaliza ``` con lenguaje
+    """Convierte markdown a HTML para Telegram (parse_mode=HTML).
+    HTML es mucho más robusto que Markdown: maneja tablas, underscores técnicos y
+    code blocks sin riesgo de delimitadores desbalanceados.
+    """
+    # ── 1. Preservar bloques de código antes de escapar HTML ──────────────────
+    code_blocks, inline_codes = [], []
 
-    # **negrita** → *negrita* ANTES de procesar encabezados
-    text = re.sub(r'\*\*(.+?)\*\*', r'*\1*', text)
+    def save_block(m):
+        code_blocks.append(m.group(1).strip())
+        return f"\x00BLK{len(code_blocks)-1}\x00"
 
-    # Encabezados: limpiar asteriscos internos antes de envolver en *...*
-    text = re.sub(
-        r'^#{3,}\s+(.+)$',
-        lambda m: f'*{_clean_heading(m.group(1))}*',
-        text, flags=re.MULTILINE)
-    text = re.sub(
-        r'^#{2}\s+(.+)$',
-        lambda m: f'\n*{_clean_heading(m.group(1))}*',
-        text, flags=re.MULTILINE)
-    text = re.sub(
-        r'^#{1}\s+(.+)$',
-        lambda m: f'\n*━━ {_clean_heading(m.group(1))} ━━*',
-        text, flags=re.MULTILINE)
+    def save_inline(m):
+        inline_codes.append(m.group(1))
+        return f"\x00INL{len(inline_codes)-1}\x00"
 
-    # Líneas horizontales --- o === → separador visual
+    text = re.sub(r'```[a-z]*\n?(.*?)```', save_block, text, flags=re.DOTALL)
+    text = re.sub(r'`([^`\n]+)`', save_inline, text)
+
+    # ── 2. Convertir tablas markdown a texto legible ───────────────────────────
+    def table_to_text(m):
+        rows = []
+        for line in m.group(0).strip().splitlines():
+            line = line.strip()
+            if re.match(r'^[|\s:–-]+$', line):
+                continue                          # fila separadora
+            cells = [c.strip() for c in line.strip('|').split('|') if c.strip()]
+            if cells:
+                rows.append('  ·  '.join(cells))
+        return '\n'.join(rows)
+
+    text = re.sub(r'(\|[^\n]+\n?){2,}', table_to_text, text)
+
+    # ── 3. Escapar caracteres HTML (<, >, &) ──────────────────────────────────
+    text = _html.escape(text)
+
+    # ── 4. **negrita** y *negrita* → <b>…</b> ────────────────────────────────
+    text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
+    text = re.sub(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', r'<b>\1</b>', text)
+
+    # ── 5. Encabezados ────────────────────────────────────────────────────────
+    def _h(s):
+        return re.sub(r'<[^>]+>', '', s).strip()   # quita etiquetas si ya tiene
+
+    text = re.sub(r'^#{3,}\s+(.+)$',
+                  lambda m: f'<b>{_h(m.group(1))}</b>',
+                  text, flags=re.MULTILINE)
+    text = re.sub(r'^#{2}\s+(.+)$',
+                  lambda m: f'\n<b>{_h(m.group(1))}</b>',
+                  text, flags=re.MULTILINE)
+    text = re.sub(r'^#\s+(.+)$',
+                  lambda m: f'\n<b>━━ {_h(m.group(1))} ━━</b>',
+                  text, flags=re.MULTILINE)
+
+    # ── 6. Separadores ────────────────────────────────────────────────────────
     text = re.sub(r'^[-=]{3,}\s*$', '─────────────', text, flags=re.MULTILINE)
 
-    # Limpiar líneas vacías múltiples (máx 2 seguidas)
+    # ── 7. Restaurar bloques de código ────────────────────────────────────────
+    for i, code in enumerate(code_blocks):
+        text = text.replace(f'\x00BLK{i}\x00',
+                            f'<pre>{_html.escape(code)}</pre>')
+    for i, code in enumerate(inline_codes):
+        text = text.replace(_html.escape(f'\x00INL{i}\x00'),
+                            f'<code>{_html.escape(code)}</code>')
+
+    # ── 8. Limpiar newlines múltiples ─────────────────────────────────────────
     text = re.sub(r'\n{3,}', '\n\n', text)
 
     return text.strip()
@@ -334,9 +371,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         context.user_data["last_analysis"] = reply
         try:
             await update.message.reply_text(
-                fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
+                fmt(reply) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
                 reply_markup=ARTIFACT_KEYBOARD,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception:
             await update.message.reply_text(
@@ -372,9 +409,9 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await update.message.reply_text(
-            fmt(analysis) + "\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
+            fmt(analysis) + "\n\n🎨 <i>¿Generar un artefacto visual con este análisis?</i>",
             reply_markup=ARTIFACT_KEYBOARD,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
     except Exception:
         await update.message.reply_text(
@@ -466,7 +503,7 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     skill_system = SYSTEM_PROMPT + "\n\n" + SKILL_PROMPTS[command]
     reply = claude_response(skill_system, args, max_tokens=800, model=get_model(context))
-    await update.message.reply_text(fmt(reply), parse_mode="Markdown")
+    await update.message.reply_text(fmt(reply), parse_mode="HTML")
 
 
 ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo visual y lo envía aquí
@@ -776,7 +813,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⚠️ No pude entender el audio. Intenta de nuevo.")
         return
 
-    await update.message.reply_text(f"🗣️ *Transcripción:* _{transcript}_", parse_mode="Markdown")
+    await update.message.reply_text(f"🗣️ <b>Transcripción:</b> <i>{_html.escape(transcript)}</i>", parse_mode="HTML")
     await update.message.reply_text("🤖 Analizando con los agentes...")
 
     try:
@@ -790,9 +827,9 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             await update.message.reply_text(
-                fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
+                fmt(reply) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
                 reply_markup=ARTIFACT_KEYBOARD,
-                parse_mode="Markdown"
+                parse_mode="HTML"
             )
         except Exception:
             # Fallback sin Markdown si la respuesta tiene caracteres problemáticos
@@ -855,10 +892,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await update.message.reply_text(
-            f"📄 *{doc.file_name}*\n\n{fmt(analysis)}\n\n"
-            "🎨 *¿Qué deseas hacer con este documento?*",
+            f"📄 <b>{doc.file_name}</b>\n\n{fmt(analysis)}\n\n"
+            "🎨 <i>¿Qué deseas hacer con este documento?</i>",
             reply_markup=DOC_KEYBOARD,
-            parse_mode="Markdown"
+            parse_mode="HTML"
         )
     except Exception:
         await update.message.reply_text(
