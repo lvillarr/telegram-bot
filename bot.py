@@ -610,17 +610,33 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text(f"⏳ Generando *{artifact_type}*...", parse_mode="Markdown")
 
-    # Construye descripción con datos estructurados si existen (ej. Excel)
+    # Construye el bloque de datos para el artefacto HTML/Excel/Chart
+    # Funciona para CUALQUIER tipo de documento: PDF, Word o Excel
     structured_data = context.user_data.get("structured_data", {})
-    if structured_data and artifact_type == "html":
-        # Serializa stats + top-20 de cada hoja para que Claude genere tablas reales
-        import json as _json
-        data_block = _json.dumps(structured_data, ensure_ascii=False, default=str)
-        description = (
-            f"Basado en este análisis:\n\n{last_analysis}\n\n"
-            f"DATOS ESTRUCTURADOS DEL ARCHIVO (úsalos EXACTAMENTE en tablas y gráficos):\n"
-            f"{data_block[:8000]}"
-        )
+    doc_content     = context.user_data.get("doc_content", "")
+    doc_tipo        = context.user_data.get("doc_tipo", "")
+
+    if artifact_type == "html":
+        if structured_data:
+            # Excel → datos tabulares exactos disponibles
+            import json as _json
+            data_block = _json.dumps(structured_data, ensure_ascii=False, default=str)
+            description = (
+                f"Análisis del documento:\n\n{last_analysis}\n\n"
+                f"DATOS EXACTOS DEL ARCHIVO {doc_tipo} "
+                f"(úsalos LITERALMENTE en tablas y gráficos — no inventes valores):\n"
+                f"{data_block[:8000]}"
+            )
+        elif doc_content:
+            # PDF / Word → pasa el contenido raw para que Claude extraiga tablas
+            description = (
+                f"Análisis del documento:\n\n{last_analysis}\n\n"
+                f"CONTENIDO COMPLETO DEL ARCHIVO {doc_tipo} "
+                f"(extrae de aquí los datos para tablas y gráficos):\n"
+                f"{doc_content[:8000]}"
+            )
+        else:
+            description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
     else:
         description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
 
@@ -1171,8 +1187,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
     push_history(context, prompt, analysis)
     context.user_data["last_analysis"] = analysis
-    # Guarda datos estructurados para uso en artefactos HTML/Excel
-    context.user_data["structured_data"] = structured_data
+    # Guarda datos estructurados (Excel) y contenido raw (PDF/Word/Excel)
+    # para que el artifact HTML pueda generar tablas con datos reales
+    context.user_data["structured_data"] = structured_data   # dict (Excel) o {} (PDF/Word)
+    context.user_data["doc_content"]     = content[:10000]   # texto raw del documento
+    context.user_data["doc_tipo"]        = tipo               # "PDF" | "Word" | "Excel"
     # Guarda contenido completo para indexar si el usuario lo solicita
     context.user_data["pending_index"] = {"filename": doc.file_name, "content": content}
 
