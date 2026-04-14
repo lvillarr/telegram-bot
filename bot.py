@@ -299,15 +299,24 @@ async def modelo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
-    history  = context.user_data.get("history", [])
-    reply = claude_response(SYSTEM_PROMPT, user_msg, model=get_model(context), history=history)
-    push_history(context, user_msg, reply)
-    context.user_data["last_analysis"] = reply
-    await update.message.reply_text(
-        fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
-        reply_markup=ARTIFACT_KEYBOARD,
-        parse_mode="Markdown"
-    )
+    try:
+        history = context.user_data.get("history", [])
+        reply = claude_response(SYSTEM_PROMPT, user_msg, model=get_model(context), history=history)
+        push_history(context, user_msg, reply)
+        context.user_data["last_analysis"] = reply
+        try:
+            await update.message.reply_text(
+                fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
+                reply_markup=ARTIFACT_KEYBOARD,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await update.message.reply_text(
+                reply + "\n\n🎨 ¿Generar un artefacto visual con esto?",
+                reply_markup=ARTIFACT_KEYBOARD
+            )
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error al procesar: {str(e)[:200]}")
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -333,11 +342,17 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     push_history(context, caption, analysis)
     context.user_data["last_analysis"] = analysis
 
-    await update.message.reply_text(
-        fmt(analysis) + "\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
-        reply_markup=ARTIFACT_KEYBOARD,
-        parse_mode="Markdown"
-    )
+    try:
+        await update.message.reply_text(
+            fmt(analysis) + "\n\n🎨 *¿Generar un artefacto visual con este análisis?*",
+            reply_markup=ARTIFACT_KEYBOARD,
+            parse_mode="Markdown"
+        )
+    except Exception:
+        await update.message.reply_text(
+            analysis + "\n\n🎨 ¿Generar un artefacto visual con este análisis?",
+            reply_markup=ARTIFACT_KEYBOARD
+        )
 
 
 async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -736,16 +751,27 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🗣️ *Transcripción:* _{transcript}_", parse_mode="Markdown")
     await update.message.reply_text("🤖 Analizando con los agentes...")
 
-    history = context.user_data.get("history", [])
-    reply = claude_response(SYSTEM_PROMPT, transcript, max_tokens=600, model=get_model(context), history=history)
-    push_history(context, transcript, reply)
-    context.user_data["last_analysis"] = reply
+    try:
+        history = context.user_data.get("history", [])
+        reply = claude_response(SYSTEM_PROMPT, transcript, max_tokens=600,
+                                model=get_model(context), history=history)
+        push_history(context, transcript, reply)
+        context.user_data["last_analysis"] = reply
 
-    await update.message.reply_text(
-        fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
-        reply_markup=ARTIFACT_KEYBOARD,
-        parse_mode="Markdown"
-    )
+        try:
+            await update.message.reply_text(
+                fmt(reply) + "\n\n🎨 *¿Generar un artefacto visual con esto?*",
+                reply_markup=ARTIFACT_KEYBOARD,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            # Fallback sin Markdown si la respuesta tiene caracteres problemáticos
+            await update.message.reply_text(
+                reply + "\n\n🎨 ¿Generar un artefacto visual con esto?",
+                reply_markup=ARTIFACT_KEYBOARD
+            )
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error al procesar: {str(e)[:200]}")
 
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
