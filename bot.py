@@ -57,7 +57,9 @@ def fmt(text: str) -> str:
             if i == 0:
                 lines.append('─' * (sum(widths) + 2 * (n_cols - 1)))
         # El contenido ya está en texto plano → escapar HTML y envolver en <pre>
-        tables.append(f'<pre>{_html.escape(chr(10).join(lines))}</pre>')
+        # Telegram NO decodifica &gt; dentro de <pre> — solo escapar < y &
+        content = chr(10).join(lines).replace('&', '&amp;').replace('<', '&lt;')
+        tables.append(f'<pre>{content}</pre>')
         return f"\x00TBL{len(tables)-1}\x00"
 
     text = re.sub(r'```[a-z]*\n?(.*?)```', save_block,  text, flags=re.DOTALL)
@@ -162,11 +164,18 @@ Si un término técnico coincide con estas palabras (ej. "peak" en estadística)
 - Usa emojis para estructurar 🌲🪵🚛🛠️📊
 - Máximo 3-4 párrafos salvo que se pida detalle
 - Si recibes imagen o documento, analiza en contexto forestal Arauco
-- **IMPORTANTE — formato de texto:** Telegram NO renderiza encabezados markdown (`#`, `##`, `###`). Para estructurar tu respuesta usa:
-  - `*Negrita*` para secciones principales (NO uses `#`)
-  - Emojis al inicio de sección en vez de `#`
+- **IMPORTANTE — formato de texto:** El sistema convierte markdown estándar a HTML. Usa libremente:
+  - `## Sección` o `### Subsección` para encabezados
+  - `**texto**` para negrita (doble asterisco)
   - Guiones `-` para listas
-  - Nunca uses `**texto**` (doble asterisco) — usa `*texto*` (asterisco simple)
+  - **Tablas:** SIEMPRE usa formato markdown con pipes `|` cuando presentes datos tabulares:
+    ```
+    | Columna 1 | Columna 2 | Columna 3 |
+    |-----------|-----------|-----------|
+    | valor 1   | valor 2   | valor 3   |
+    ```
+    Nunca uses espacios o tabs para alinear tablas manualmente — usa siempre pipes `|`.
+  - Bloques de código con triple backtick ``` para código o datos técnicos
 """
 
 IDENTIDAD = """
