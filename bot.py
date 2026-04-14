@@ -939,6 +939,31 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(f"⏳ Generando artefacto *{artifact_type}*...", parse_mode="Markdown")
 
+    # Enriquecer description con datos del documento cargado (igual que artifact_callback)
+    if artifact_type == "html":
+        structured_data = context.user_data.get("structured_data", {})
+        doc_content     = context.user_data.get("doc_content", "")
+        doc_tipo        = context.user_data.get("doc_tipo", "")
+        last_analysis   = context.user_data.get("last_analysis", "")
+
+        if structured_data:
+            data_block = json.dumps(structured_data, ensure_ascii=False, default=str)
+            description = (
+                f"{description}\n\n"
+                f"DATOS EXACTOS DEL ARCHIVO {doc_tipo} "
+                f"(úsalos LITERALMENTE en tablas y gráficos — no inventes valores):\n"
+                f"{data_block[:8000]}"
+            )
+        elif doc_content:
+            description = (
+                f"{description}\n\n"
+                f"CONTENIDO COMPLETO DEL ARCHIVO {doc_tipo} "
+                f"(extrae de aquí los datos para tablas y gráficos):\n"
+                f"{doc_content[:8000]}"
+            )
+        elif last_analysis:
+            description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
+
     artifact_model = "claude-sonnet-4-6"
     artifact_tokens = 16000 if artifact_type == "html" else 2000
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
