@@ -610,11 +610,22 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text(f"⏳ Generando *{artifact_type}*...", parse_mode="Markdown")
 
-    description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
-    # Usar solo el prompt de artefacto, sin el SYSTEM_PROMPT completo
-    # para no desperdiciar tokens del contexto en la generación visual
-    artifact_model = "claude-sonnet-4-6"
-    artifact_tokens = 6000 if artifact_type == "html" else 2000
+    # Construye descripción con datos estructurados si existen (ej. Excel)
+    structured_data = context.user_data.get("structured_data", {})
+    if structured_data and artifact_type == "html":
+        # Serializa stats + top-20 de cada hoja para que Claude genere tablas reales
+        import json as _json
+        data_block = _json.dumps(structured_data, ensure_ascii=False, default=str)
+        description = (
+            f"Basado en este análisis:\n\n{last_analysis}\n\n"
+            f"DATOS ESTRUCTURADOS DEL ARCHIVO (úsalos EXACTAMENTE en tablas y gráficos):\n"
+            f"{data_block[:8000]}"
+        )
+    else:
+        description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
+
+    artifact_model  = "claude-sonnet-4-6"
+    artifact_tokens = 10000 if artifact_type == "html" else 2000
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
@@ -974,17 +985,84 @@ def extract_docx(data: bytes) -> str:
     return "\n".join(parts)
 
 
-def extract_xlsx(data: bytes) -> str:
-    """Extrae datos de un Excel (máx. 3 hojas, 50 filas por hoja)."""
-    wb = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
-    parts = []
+def extract_xlsx(data: bytes) -> tuple[str, dict]:
+    """
+    Extrae datos de un Excel.
+    Retorna (resumen_texto, datos_estructurados) donde datos_estructurados
+    incluye estadísticas y top-N filas listas para usar en HTML/tablas.
+    """
+    from collections import defaultdict, Counter
+
+    wb  = openpyxl.load_workbook(io.BytesIO(data), data_only=True)
+    txt = []
+    structured = {}   # hoja → {headers, sample, stats, totals}
+
     for sheet_name in wb.sheetnames[:3]:
         ws = wb[sheet_name]
-        parts.append(f"=== Hoja: {sheet_name} ===")
-        for row in ws.iter_rows(max_row=50, values_only=True):
+        headers_row = next(ws.iter_rows(min_row=1, max_row=1, values_only=True))
+        headers = [str(h) if h is not None else f"Col{i}" for i, h in enumerate(headers_row)]
+
+        # Lee todas las filas (hasta 5.000 para estadísticas)
+        all_rows = []
+        for row in ws.iter_rows(min_row=2, max_row=min(ws.max_row, 5001), values_only=True):
             if any(c is not None for c in row):
-                parts.append(" | ".join(str(c) if c is not None else "" for c in row))
-    return "\n".join(parts)
+                all_rows.append(list(row))
+
+        total = len(all_rows)
+        txt.append(f"=== Hoja: {sheet_name} ({total} filas, {len(headers)} columnas) ===")
+        txt.append(" | ".join(headers))
+
+        # Muestra primeras 25 filas como texto
+        for row in all_rows[:25]:
+            txt.append(" | ".join(str(c) if c is not None else "" for c in row))
+        if total > 25:
+            txt.append(f"... ({total - 25} filas adicionales)")
+
+        # Estadísticas por columna categórica (máx. 20 valores únicos)
+        stats = {}
+        for col_i, col_name in enumerate(headers):
+            vals = [row[col_i] for row in all_rows if col_i < len(row) and row[col_i] not in (None, "", "<Null>", "None")]
+            if not vals:
+                continue
+            # Numérica
+            nums = []
+            for v in vals:
+                try:
+                    nums.append(float(str(v).replace(",", ".")))
+                except (ValueError, TypeError):
+                    pass
+            if len(nums) > len(vals) * 0.5:
+                stats[col_name] = {
+                    "tipo": "num",
+                    "total": len(nums),
+                    "suma": round(sum(nums), 2),
+                    "min": round(min(nums), 2),
+                    "max": round(max(nums), 2),
+                    "prom": round(sum(nums) / len(nums), 2),
+                }
+            elif len(set(str(v) for v in vals)) <= 20:
+                cnt = Counter(str(v) for v in vals)
+                stats[col_name] = {"tipo": "cat", "frecuencias": dict(cnt.most_common(15))}
+
+        # Top-20 filas por primera columna numérica (si existe)
+        num_col = next((i for i, h in enumerate(headers)
+                        if h in stats and stats[h]["tipo"] == "num"), None)
+        if num_col is not None:
+            try:
+                top20 = sorted(all_rows, key=lambda r: float(str(r[num_col] or 0).replace(",", ".")), reverse=True)[:20]
+            except Exception:
+                top20 = all_rows[:20]
+        else:
+            top20 = all_rows[:20]
+
+        structured[sheet_name] = {
+            "headers":  headers,
+            "total_filas": total,
+            "muestra_top20": [[str(c) if c is not None else "" for c in r] for r in top20],
+            "stats":    stats,
+        }
+
+    return "\n".join(txt), structured
 
 
 async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1065,12 +1143,14 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         if ext == ".pdf":
             content = extract_pdf(file_bytes)
+            structured_data = {}
             tipo = "PDF"
         elif ext == ".docx":
             content = extract_docx(file_bytes)
+            structured_data = {}
             tipo = "Word"
         else:
-            content = extract_xlsx(file_bytes)
+            content, structured_data = extract_xlsx(file_bytes)
             tipo = "Excel"
     except Exception as e:
         await update.message.reply_text(f"⚠️ No pude leer el archivo: {str(e)[:200]}")
@@ -1091,6 +1171,8 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
     push_history(context, prompt, analysis)
     context.user_data["last_analysis"] = analysis
+    # Guarda datos estructurados para uso en artefactos HTML/Excel
+    context.user_data["structured_data"] = structured_data
     # Guarda contenido completo para indexar si el usuario lo solicita
     context.user_data["pending_index"] = {"filename": doc.file_name, "content": content}
 
