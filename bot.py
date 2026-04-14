@@ -39,19 +39,35 @@ def fmt(text: str) -> str:
     text = re.sub(r'```[a-z]*\n?(.*?)```', save_block, text, flags=re.DOTALL)
     text = re.sub(r'`([^`\n]+)`', save_inline, text)
 
-    # ── 2. Convertir tablas markdown a texto legible ───────────────────────────
-    def table_to_text(m):
-        rows = []
+    # ── 2. Convertir tablas markdown a tabla monospace alineada en <pre> ────────
+    def table_to_pre(m):
+        raw_rows = []
         for line in m.group(0).strip().splitlines():
             line = line.strip()
-            if re.match(r'^[|\s:–-]+$', line):
-                continue                          # fila separadora
-            cells = [c.strip() for c in line.strip('|').split('|') if c.strip()]
-            if cells:
-                rows.append('  ·  '.join(cells))
-        return '\n'.join(rows)
+            if re.match(r'^[|\s:–\-]+$', line):
+                continue                          # fila separadora |---|---|
+            cells = [c.strip() for c in line.strip('|').split('|')]
+            if any(cells):
+                raw_rows.append(cells)
+        if not raw_rows:
+            return ''
+        # Normalizar número de columnas
+        n_cols = max(len(r) for r in raw_rows)
+        rows = [r + [''] * (n_cols - len(r)) for r in raw_rows]
+        # Calcular ancho máximo por columna
+        widths = [max(len(row[c]) for row in rows) for c in range(n_cols)]
+        # Construir líneas alineadas
+        lines = []
+        for i, row in enumerate(rows):
+            line = '  '.join(cell.ljust(widths[c]) for c, cell in enumerate(row))
+            lines.append(line.rstrip())
+            if i == 0:                            # separador tras la cabecera
+                lines.append('─' * (sum(widths) + 2 * (n_cols - 1)))
+        # Escapar HTML dentro del bloque de código y envolver en <pre>
+        content = _html.escape('\n'.join(lines))
+        return f'<pre>{content}</pre>'
 
-    text = re.sub(r'(\|[^\n]+\n?){2,}', table_to_text, text)
+    text = re.sub(r'(\|[^\n]+\n?){2,}', table_to_pre, text)
 
     # ── 3. Escapar caracteres HTML (<, >, &) ──────────────────────────────────
     text = _html.escape(text)
