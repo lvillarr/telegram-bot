@@ -728,8 +728,36 @@ El HTML debe:
 - Incluir navbar con logo Arauco blanco sobre fondo `#696158` y el título del dashboard
 - Mostrar tarjetas KPI resumen (mínimo 3) con métricas relevantes al tema pedido
 - Incluir al menos un gráfico Chart.js con datos realistas del contexto forestal
-- Tener tabla de datos si el contexto lo justifica
+- **SIEMPRE incluir al menos una tabla HTML** con datos estructurados del análisis (peligros, controles, KPIs, fases, responsables, etc.). NUNCA uses listas de bullets donde una tabla es más clara.
 - Ser completamente funcional al abrir el archivo en un browser (sin servidor)
+
+## Tabla HTML obligatoria — usa exactamente este estilo Arauco
+
+```html
+<table style="width:100%;border-collapse:collapse;font-family:'Lato',sans-serif;font-size:14px;margin-top:8px;">
+  <thead>
+    <tr style="background:#696158;color:#fff;">
+      <th style="padding:10px 14px;text-align:left;font-weight:700;">Columna 1</th>
+      <th style="padding:10px 14px;text-align:left;font-weight:700;">Columna 2</th>
+      <th style="padding:10px 14px;text-align:left;font-weight:700;">Columna 3</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr style="background:#fff;">
+      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor A</td>
+      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor B</td>
+      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;color:#EA7600;font-weight:700;">Crítico</td>
+    </tr>
+    <tr style="background:#DFD1A7;">
+      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor C</td>
+      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor D</td>
+      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;color:#BFB800;font-weight:700;">OK</td>
+    </tr>
+  </tbody>
+</table>
+```
+
+Adapta columnas y datos al contexto del análisis. Alterna filas blanco/crema (`#DFD1A7`). Usa naranja `#EA7600` para valores críticos/alertas y verde-oliva `#BFB800` para valores positivos en la última columna.
 
 ## Dependencias CDN permitidas
 ```html
