@@ -25,8 +25,9 @@ def fmt(text: str) -> str:
     HTML es mucho más robusto que Markdown: maneja tablas, underscores técnicos y
     code blocks sin riesgo de delimitadores desbalanceados.
     """
-    # ── 1. Preservar bloques de código antes de escapar HTML ──────────────────
-    code_blocks, inline_codes = [], []
+    # ── 1. Extraer tablas, code blocks e inline code ANTES de escapar HTML ──────
+    #      Se guardan como placeholders para restaurarlos al final ya formateados.
+    code_blocks, inline_codes, tables = [], [], []
 
     def save_block(m):
         code_blocks.append(m.group(1).strip())
@@ -36,11 +37,7 @@ def fmt(text: str) -> str:
         inline_codes.append(m.group(1))
         return f"\x00INL{len(inline_codes)-1}\x00"
 
-    text = re.sub(r'```[a-z]*\n?(.*?)```', save_block, text, flags=re.DOTALL)
-    text = re.sub(r'`([^`\n]+)`', save_inline, text)
-
-    # ── 2. Convertir tablas markdown a tabla monospace alineada en <pre> ────────
-    def table_to_pre(m):
+    def save_table(m):
         raw_rows = []
         for line in m.group(0).strip().splitlines():
             line = line.strip()
@@ -51,25 +48,23 @@ def fmt(text: str) -> str:
                 raw_rows.append(cells)
         if not raw_rows:
             return ''
-        # Normalizar número de columnas
-        n_cols = max(len(r) for r in raw_rows)
-        rows = [r + [''] * (n_cols - len(r)) for r in raw_rows]
-        # Calcular ancho máximo por columna
-        widths = [max(len(row[c]) for row in rows) for c in range(n_cols)]
-        # Construir líneas alineadas
-        lines = []
+        n_cols  = max(len(r) for r in raw_rows)
+        rows    = [r + [''] * (n_cols - len(r)) for r in raw_rows]
+        widths  = [max(len(row[c]) for row in rows) for c in range(n_cols)]
+        lines   = []
         for i, row in enumerate(rows):
-            line = '  '.join(cell.ljust(widths[c]) for c, cell in enumerate(row))
-            lines.append(line.rstrip())
-            if i == 0:                            # separador tras la cabecera
+            lines.append('  '.join(cell.ljust(widths[c]) for c, cell in enumerate(row)).rstrip())
+            if i == 0:
                 lines.append('─' * (sum(widths) + 2 * (n_cols - 1)))
-        # Escapar HTML dentro del bloque de código y envolver en <pre>
-        content = _html.escape('\n'.join(lines))
-        return f'<pre>{content}</pre>'
+        # El contenido ya está en texto plano → escapar HTML y envolver en <pre>
+        tables.append(f'<pre>{_html.escape(chr(10).join(lines))}</pre>')
+        return f"\x00TBL{len(tables)-1}\x00"
 
-    text = re.sub(r'(\|[^\n]+\n?){2,}', table_to_pre, text)
+    text = re.sub(r'```[a-z]*\n?(.*?)```', save_block,  text, flags=re.DOTALL)
+    text = re.sub(r'`([^`\n]+)`',          save_inline, text)
+    text = re.sub(r'(\|[^\n]+\n?){2,}',    save_table,  text)
 
-    # ── 3. Escapar caracteres HTML (<, >, &) ──────────────────────────────────
+    # ── 2. Escapar HTML del texto restante (<, >, &) ──────────────────────────
     text = _html.escape(text)
 
     # ── 4. **negrita** y *negrita* → <b>…</b> ────────────────────────────────
@@ -93,9 +88,11 @@ def fmt(text: str) -> str:
     # ── 6. Separadores ────────────────────────────────────────────────────────
     text = re.sub(r'^[-=]{3,}\s*$', '─────────────', text, flags=re.MULTILINE)
 
-    # ── 7. Restaurar bloques de código ────────────────────────────────────────
+    # ── 7. Restaurar tablas, bloques de código e inline code ─────────────────
+    for i, tbl in enumerate(tables):
+        text = text.replace(_html.escape(f'\x00TBL{i}\x00'), tbl)
     for i, code in enumerate(code_blocks):
-        text = text.replace(f'\x00BLK{i}\x00',
+        text = text.replace(_html.escape(f'\x00BLK{i}\x00'),
                             f'<pre>{_html.escape(code)}</pre>')
     for i, code in enumerate(inline_codes):
         text = text.replace(_html.escape(f'\x00INL{i}\x00'),
@@ -954,19 +951,50 @@ async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 async def documentos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Lista todos los documentos indexados en RAG."""
     try:
-        docs = rag.list_documents()
+        docs   = rag.list_documents()
+        total  = rag.col.count()
         if not docs:
             await update.message.reply_text(
                 "📚 La base de conocimiento está vacía.\n"
-                "Sube un PDF, Word o Excel y presiona *📚 Indexar en RAG*.",
-                parse_mode="Markdown"
+                "Sube un PDF, Word o Excel y presiona <b>📚 Indexar en RAG</b>.",
+                parse_mode="HTML"
             )
             return
         lista = "\n".join(f"• {d}" for d in docs)
         await update.message.reply_text(
-            f"📚 *Documentos indexados ({len(docs)}):*\n\n{lista}",
-            parse_mode="Markdown"
+            f"📚 <b>Documentos indexados ({len(docs)}):</b>\n"
+            f"<i>{total} fragmentos totales en la base de conocimiento</i>\n\n{lista}",
+            parse_mode="HTML"
         )
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
+
+
+async def buscar_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Prueba la búsqueda RAG directamente sin pasar por Claude."""
+    query_text = " ".join(context.args) if context.args else ""
+    if not query_text:
+        await update.message.reply_text(
+            "Uso: <code>/buscar texto a buscar</code>\n"
+            "Ejemplo: <code>/buscar rangos de pendiente terreno</code>",
+            parse_mode="HTML"
+        )
+        return
+    try:
+        chunks = rag.query(query_text)
+        if not chunks:
+            await update.message.reply_text(
+                f"🔍 Sin resultados para: <i>{_html.escape(query_text)}</i>\n\n"
+                "Verifica con /documentos que el documento esté indexado.",
+                parse_mode="HTML"
+            )
+            return
+        resp = f"🔍 <b>Resultados para:</b> <i>{_html.escape(query_text)}</i>\n\n"
+        for i, c in enumerate(chunks, 1):
+            resp += (f"<b>{i}. {_html.escape(c['filename'])}</b> "
+                     f"(relevancia: {c['score']})\n"
+                     f"<i>{_html.escape(c['text'][:300])}...</i>\n\n")
+        await update.message.reply_text(resp, parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
 
@@ -1057,6 +1085,7 @@ app.add_handler(CommandHandler("reset",      reset_handler))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
 app.add_handler(CommandHandler("indexar",    indexar_handler))
 app.add_handler(CommandHandler("documentos", documentos_handler))
+app.add_handler(CommandHandler("buscar",     buscar_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
 app.add_handler(CallbackQueryHandler(rag_index_callback, pattern="^rag_index$"))
 
