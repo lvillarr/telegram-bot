@@ -86,6 +86,14 @@ def fmt(text: str) -> str:
     # ── 2. Escapar HTML del texto restante (<, >, &) ──────────────────────────
     text = _html.escape(text)
 
+    # ── 3. Formatos inventados por Claude que deben convertirse ───────────────
+    # ==texto== o ===texto=== → <b>texto</b>  (Claude los usa como "encabezados")
+    text = re.sub(r'={2,3}([^=\n]+)={2,3}', lambda m: f'<b>{m.group(1).strip()}</b>', text)
+    # __texto__ → <b>texto</b>
+    text = re.sub(r'__([^_\n]+)__', r'<b>\1</b>', text)
+    # _texto_ → <i>texto</i>  (énfasis)
+    text = re.sub(r'(?<![_\w])_([^_\n]+)_(?![_\w])', r'<i>\1</i>', text)
+
     # ── 4. **negrita** y *negrita* → <b>…</b> ────────────────────────────────
     text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text, flags=re.DOTALL)
     text = re.sub(r'(?<!\*)\*([^*\n]+?)\*(?!\*)', r'<b>\1</b>', text)
@@ -181,18 +189,34 @@ Si un término técnico coincide con estas palabras (ej. "peak" en estadística)
 - Usa emojis para estructurar 🌲🪵🚛🛠️📊
 - Máximo 3-4 párrafos salvo que se pida detalle
 - Si recibes imagen o documento, analiza en contexto forestal Arauco
-- **IMPORTANTE — formato de texto:** El sistema convierte markdown estándar a HTML. Usa libremente:
-  - `## Sección` o `### Subsección` para encabezados
-  - `**texto**` para negrita (doble asterisco)
-  - Guiones `-` para listas
-  - **TABLAS — REGLA OBLIGATORIA:** Cuando presentes cualquier dato tabular, comparación, matriz o resumen con columnas, DEBES usar SIEMPRE el formato markdown con pipes. NUNCA uses ==, espacios o cualquier otro separador. Formato correcto:
+- **IMPORTANTE — formato de texto:** El sistema convierte markdown a HTML. Reglas por caso:
 
-| Columna 1 | Columna 2 | Columna 3 |
-|-----------|-----------|-----------|
-| valor 1   | valor 2   | valor 3   |
+  **Encabezados:** usa `##` o `###` (nunca `#` solo ni `==texto==`)
+  **Negrita:** usa `**texto**`
+  **Listas:** guiones `-`
 
-  Si el usuario pide una tabla, si haces un resumen de fases/estados/responsables, o si presentas datos comparativos: SIEMPRE formato pipes `|`. Esto es no negociable.
-  - Bloques de código con triple backtick ``` para código o datos técnicos
+  **TABLAS — DOS CASOS, NO MEZCLES:**
+
+  CASO A — Celdas cortas (< 35 chars): usa SIEMPRE tabla markdown con pipes.
+  Ejemplo real Arauco:
+
+| Fase          | Sistema       | Estado    |
+|---------------|---------------|-----------|
+| Planificación | Forest NOM    | ✓ Activo  |
+| Ejecución     | SGL básico    | Parcial   |
+| Cierre        | SAP PM        | Pendiente |
+
+  CASO B — Contenido largo por ítem: usa secciones con negrita, NO tabla.
+  Ejemplo:
+
+**1. Planificación** — Forest NOM
+Define tiempos de volteo, movimiento y TSP de máquinas, equipos asignados...
+
+**2. Ejecución** — SGL básico
+Registra horas ON/OFF reales, eventos y desviaciones por parcial...
+
+  **PROHIBIDO:** ==texto==, asterisco simple `*texto*` como encabezado, mezclar header de tabla con prosa debajo, o usar espacios/guiones para alinear columnas manualmente.
+  - Bloques de código: triple backtick ```
 """
 
 IDENTIDAD = """
