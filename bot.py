@@ -480,6 +480,9 @@ ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📊 Excel",   callback_data="art_excel"),
     InlineKeyboardButton("📈 Gráfico", callback_data="art_chart"),
     InlineKeyboardButton("🌐 HTML",    callback_data="art_html"),
+], [
+    InlineKeyboardButton("📄 PDF",     callback_data="art_pdf"),
+    InlineKeyboardButton("📅 Gantt",   callback_data="art_gantt"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
@@ -487,6 +490,8 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📈 Gráfico",        callback_data="art_chart"),
     InlineKeyboardButton("🌐 HTML",           callback_data="art_html"),
 ], [
+    InlineKeyboardButton("📄 PDF",            callback_data="art_pdf"),
+    InlineKeyboardButton("📅 Gantt",          callback_data="art_gantt"),
     InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
 ]])
 
@@ -709,6 +714,27 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 photo=buf,
                 caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua"
             )
+        elif artifact_type in ("pdf", "gantt"):
+            html = raw.strip()
+            if html.startswith("```"):
+                html = html.split("\n", 1)[-1]
+            if html.endswith("```"):
+                html = html.rsplit("```", 1)[0]
+            html = html.strip()
+            if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
+                await query.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
+                return
+            buf = io.BytesIO(html.encode("utf-8"))
+            if artifact_type == "pdf":
+                await query.message.reply_document(
+                    document=buf, filename="informe-arauco.html",
+                    caption="📄 Informe listo — abre en browser y usa Archivo → Imprimir → Guardar como PDF"
+                )
+            else:
+                await query.message.reply_document(
+                    document=buf, filename="gantt-arauco.html",
+                    caption="📅 Gantt listo — abre el archivo en tu browser"
+                )
     except json.JSONDecodeError:
         await query.message.reply_text("⚠️ Error al procesar. Intenta de nuevo.")
     except Exception as e:
@@ -942,6 +968,162 @@ El JSON debe tener exactamente esta estructura:
 Los datos deben ser realistas para el contexto forestal de Arauco pedido.
 Incluye entre 5 y 12 puntos de datos.
 Responde ÚNICAMENTE con el JSON válido, sin explicaciones ni bloques de código markdown.""",
+
+    "pdf": """Eres el Agente DA de Arauco. Genera un informe HTML optimizado para imprimir como PDF.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CSS OBLIGATORIO PARA IMPRESIÓN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Lato', Arial, sans-serif; font-size: 11pt; color: #222;
+       background: #fff; padding: 0; margin: 0; }
+.page { width: 210mm; min-height: 297mm; padding: 18mm 20mm; margin: 0 auto;
+        background: #fff; }
+@media print {
+  .no-print { display: none !important; }
+  .page { padding: 12mm 16mm; box-shadow: none; }
+  table { page-break-inside: avoid; }
+  h2, h3 { page-break-after: avoid; }
+}
+@media screen {
+  body { background: #e5e5e5; }
+  .page { box-shadow: 0 2px 16px rgba(0,0,0,0.15); margin: 24px auto; }
+}
+.header-pdf { display: flex; align-items: center; justify-content: space-between;
+              border-bottom: 3px solid #696158; padding-bottom: 12px; margin-bottom: 20px; }
+.header-pdf .titulo-doc { font-size: 16pt; font-weight: 900; color: #696158; }
+.header-pdf .meta { font-size: 8pt; color: #999; text-align: right; line-height: 1.6; }
+h2 { font-size: 12pt; font-weight: 700; color: #696158; margin: 20px 0 8px;
+     border-left: 4px solid #BFB800; padding-left: 8px; }
+h3 { font-size: 10pt; font-weight: 700; color: #333; margin: 14px 0 6px; }
+p  { font-size: 10pt; line-height: 1.6; margin-bottom: 8px; color: #333; }
+.kpi-row { display: flex; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
+.kpi-box { flex: 1; min-width: 110px; border: 1px solid #DFD1A7; border-radius: 6px;
+           padding: 10px 14px; background: #fafafa; }
+.kpi-box .val { font-size: 18pt; font-weight: 900; color: #696158; }
+.kpi-box .lbl { font-size: 7pt; color: #999; text-transform: uppercase; letter-spacing: 0.05em; }
+table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 10px 0; }
+thead tr { background: #696158; color: #fff; }
+th { padding: 7px 10px; text-align: left; font-weight: 700; font-size: 8pt;
+     text-transform: uppercase; letter-spacing: 0.04em; }
+td { padding: 6px 10px; border-bottom: 1px solid #eee; }
+tbody tr:nth-child(even) { background: #EDEAE6; }
+.footer-pdf { margin-top: 24px; padding-top: 10px; border-top: 1px solid #DFD1A7;
+              font-size: 7pt; color: #aaa; display: flex; justify-content: space-between; }
+.btn-print { display: block; margin: 16px auto; padding: 10px 28px;
+             background: #696158; color: #fff; border: none; border-radius: 6px;
+             font-family: 'Lato', sans-serif; font-size: 11pt; cursor: pointer;
+             font-weight: 700; }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTRUCTURA DEL INFORME
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Botón "Imprimir / Guardar PDF" (.no-print) arriba del .page
+2. Dentro de .page:
+   a. Header — logo Arauco + título del informe + meta (área, fecha, autor)
+   b. Resumen ejecutivo — 2-3 párrafos con los hallazgos principales
+   c. KPI row — 3-5 métricas clave con .kpi-box
+   d. Secciones con <h2> para cada tema del análisis
+   e. Tablas de datos (sin filtros, estilo limpio para impresión)
+   f. Conclusiones y recomendaciones
+   g. Footer — área, sistema de origen, fecha de generación
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGLAS DE DATOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EXCEL → usa stats para KPIs y totales; muestra_top20 para tablas
+PDF/WORD → extrae secciones, cifras y tablas del texto recibido
+TODOS → nunca inventes cifras; formato chileno 1.234,5
+
+Responde ÚNICAMENTE con el código HTML. Sin markdown. Empieza con <!DOCTYPE html>.""",
+
+    "gantt": """Eres el Agente DA de Arauco. Genera un diagrama de Gantt interactivo en HTML.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+CDN OBLIGATORIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.min.css">
+<script src="https://cdn.jsdelivr.net/npm/frappe-gantt/dist/frappe-gantt.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTRUCTURA OBLIGATORIA
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. Header Arauco — fondo #696158, logo blanco, título del proyecto
+2. Barra de controles:
+   - Selector de vista: Día / Semana / Mes / Año (<button> con onclick)
+   - Indicador de % avance total del proyecto
+3. Contenedor del Gantt: <div id="gantt"></div>
+4. Panel de detalle de tarea (aparece al hacer clic): nombre, responsable, fechas, % avance, dependencias
+5. Leyenda de colores por área/responsable
+6. Footer Arauco
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+JS OBLIGATORIO — estructura exacta
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// Paleta Arauco
+const COLORS = {
+  grisTierra:'#696158', verdeOliva:'#BFB800', naranja:'#EA7600',
+  crema:'#DFD1A7', rojo:'#C00000', azul:'#2D6A9F'
+};
+
+// Tareas — extrae del análisis/documento recibido o crea las más relevantes
+const tareas = [
+  {
+    id: 'tarea-1',
+    name: 'Nombre de la tarea',
+    start: 'YYYY-MM-DD',
+    end: 'YYYY-MM-DD',
+    progress: 0-100,          // % de avance
+    dependencies: '',         // 'tarea-0' o '' si no tiene
+    custom_class: 'bar-verde' // bar-verde | bar-naranja | bar-gris | bar-rojo
+  },
+  // ... más tareas
+];
+
+// CSS para colores de barras
+// .bar-verde .bar-progress { fill: #BFB800 }
+// .bar-naranja .bar-progress { fill: #EA7600 }
+// .bar-gris .bar-progress { fill: #696158 }
+// .bar-rojo .bar-progress { fill: #C00000 }
+
+// Inicializar Gantt
+const gantt = new Gantt('#gantt', tareas, {
+  view_mode: 'Week',          // Day | Week | Month | Year
+  date_format: 'YYYY-MM-DD',
+  language: 'es',
+  on_click: (task) => mostrarDetalle(task),
+  on_progress_change: (task, progress) => {},
+  popup_trigger: 'click',
+});
+
+// Cambiar vista
+function setVista(modo) {
+  gantt.change_view_mode(modo);
+  document.querySelectorAll('.btn-vista').forEach(b => b.classList.remove('active'));
+  document.querySelector(`[data-modo="${modo}"]`).classList.add('active');
+}
+
+// Mostrar panel de detalle al hacer clic en una tarea
+function mostrarDetalle(task) {
+  document.getElementById('detalle-nombre').textContent = task.name;
+  document.getElementById('detalle-inicio').textContent = task.start;
+  document.getElementById('detalle-fin').textContent = task.end;
+  document.getElementById('detalle-avance').textContent = task.progress + '%';
+  document.getElementById('detalle-deps').textContent = task.dependencies || 'Ninguna';
+  document.getElementById('panel-detalle').style.display = 'block';
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGLAS DE DATOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Si el análisis/documento tiene fechas y tareas: extraer y usar directamente
+- Si no hay fechas reales: crear un proyecto forestal típico coherente con el contexto
+- Mínimo 5 tareas, máximo 25
+- Asignar colores por área: EO=verde, TD=naranja, IA=azul, gestión=gris, riesgo=rojo
+- Formato de fecha obligatorio: YYYY-MM-DD
+
+Responde ÚNICAMENTE con el código HTML. Sin markdown. Empieza con <!DOCTYPE html>.""",
 }
 
 
@@ -1027,7 +1209,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if artifact_type not in ARTIFACT_PROMPTS:
         await update.message.reply_text(
-            f"Tipo `{artifact_type}` no reconocido. Usa: `html`, `excel` o `chart`.",
+            f"Tipo `{artifact_type}` no reconocido. Usa: `html`, `excel`, `chart`, `pdf` o `gantt`.",
             parse_mode="Markdown"
         )
         return
@@ -1042,7 +1224,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⏳ Generando artefacto *{artifact_type}*...", parse_mode="Markdown")
 
     # Enriquecer description con datos del documento cargado (igual que artifact_callback)
-    if artifact_type == "html":
+    if artifact_type in ("html", "pdf", "gantt"):
         structured_data = context.user_data.get("structured_data", {})
         doc_content     = context.user_data.get("doc_content", "")
         doc_tipo        = context.user_data.get("doc_tipo", "")
@@ -1067,12 +1249,12 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
     artifact_model = "claude-sonnet-4-6"
-    artifact_tokens = 16000 if artifact_type == "html" else 2000
+    artifact_tokens = 16000 if artifact_type in ("html", "pdf", "gantt") else 2000
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
     try:
-        if artifact_type == "html":
+        if artifact_type in ("html", "pdf", "gantt"):
             html = raw.strip()
             if html.startswith("```"):
                 html = html.split("\n", 1)[-1]
@@ -1083,11 +1265,16 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
             buf = io.BytesIO(html.encode("utf-8"))
-            await update.message.reply_document(document=buf, filename="dashboard-arauco.html",
-                                                caption="🌲 Dashboard listo — abre el archivo en tu browser")
+            filenames = {"html": "dashboard-arauco.html", "pdf": "informe-arauco.html", "gantt": "gantt-arauco.html"}
+            captions  = {
+                "html":  "🌲 Dashboard listo — abre el archivo en tu browser",
+                "pdf":   "📄 Informe listo — abre en browser y usa Archivo → Imprimir → Guardar como PDF",
+                "gantt": "📅 Gantt listo — abre el archivo en tu browser",
+            }
+            await update.message.reply_document(document=buf, filename=filenames[artifact_type],
+                                                caption=captions[artifact_type])
 
         elif artifact_type == "excel":
-            # Limpiar posibles bloques markdown del JSON
             cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             data = json.loads(cleaned)
             buf = build_excel(data)
