@@ -1037,234 +1037,61 @@ TODOS → nunca inventes cifras; formato chileno 1.234,5
 
 Responde ÚNICAMENTE con el código HTML. Sin markdown. Empieza con <!DOCTYPE html>.""",
 
-    "gantt": """Eres el Agente DA de Arauco. Genera un diagrama de Gantt interactivo en HTML puro.
+    "gantt": """Eres el Agente DA de Arauco. Tu única tarea es generar un archivo HTML completo y funcional con un diagrama de Gantt interactivo.
+
+REGLA ABSOLUTA: responde ÚNICAMENTE con el código HTML. Sin texto previo, sin explicaciones, sin markdown. La primera línea debe ser <!DOCTYPE html>.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGLA CRÍTICA — SIN LIBRERÍAS EXTERNAS
+IMPLEMENTACIÓN TÉCNICA — SIN CDN
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NO uses frappe-gantt, dhtmlx, Google Charts ni ninguna librería CDN.
-El Gantt DEBE ser renderizado con SVG puro + JavaScript vanilla.
-Solo se permite: Google Fonts para tipografía Lato.
+Implementa el Gantt tú mismo con SVG + JavaScript vanilla puro.
+Solo se permite: Google Fonts (Lato) como único recurso externo.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ESTRUCTURA HTML OBLIGATORIA
+ESTRUCTURA REQUERIDA
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Header Arauco — fondo #696158, logo SVG blanco, título del proyecto, subtítulo con fecha
-2. Barra de controles:
-   - Botones de vista: Semana / Mes / Trimestre (clase .btn-vista, activo=fondo #BFB800)
-   - Badge de avance total del proyecto (% promedio de todas las tareas)
-3. Contenedor SVG horizontal con scroll: <div id="gantt-wrap"><svg id="gantt-svg"></svg></div>
-   - Panel izquierdo fijo: lista de tareas con nombre y responsable
-   - Panel derecho scrollable: timeline con barras SVG
-4. Panel lateral de detalle (slide-in desde la derecha):
-   - nombre, responsable, fechas inicio/fin, % avance, área, dependencias
-   - botón X para cerrar
-5. Leyenda de colores por área (EO/TD/IA/Gestión/Riesgo)
-6. Footer Arauco
+El HTML debe tener estas secciones en orden:
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-JS OBLIGATORIO — implementación exacta
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Paleta Arauco
-const COLORS = {
-  grisTierra:'#696158', verdeOliva:'#BFB800', naranja:'#EA7600',
-  crema:'#DFD1A7', rojo:'#C00000', azul:'#2D6A9F',
-  cremaSuave:'#EDEAE6'
-};
+1. HEADER: fondo #696158, texto blanco, título del proyecto centrado, subtítulo con fecha generación.
 
-// Mapa de colores por área
-const AREA_COLOR = {
-  'EO': COLORS.verdeOliva,
-  'TD': COLORS.naranja,
-  'IA': COLORS.azul,
-  'Gestión': COLORS.grisTierra,
-  'Riesgo': COLORS.rojo
-};
+2. CONTROLES: tres botones "Semana / Mes / Trimestre" para cambiar la escala de tiempo.
+   Badge que muestra el % de avance promedio del proyecto.
 
-// Tareas — extrae del contexto/documento recibido o crea proyecto forestal representativo
-const TAREAS = [
-  {
-    id: 1,
-    nombre: 'Nombre tarea',
-    responsable: 'Responsable',
-    area: 'EO',           // EO | TD | IA | Gestión | Riesgo
-    inicio: '2025-01-06', // YYYY-MM-DD lunes
-    fin:    '2025-01-24', // YYYY-MM-DD
-    avance: 75,           // 0-100
-    deps:   []            // [id, id, ...] ids de tareas predecesoras
-  },
-  // ... mínimo 6, máximo 20 tareas
-];
+3. GANTT SVG: tabla visual con dos columnas —
+   - Columna izquierda (220px fija): nombre de la tarea + responsable (texto)
+   - Columna derecha (scroll horizontal): barras horizontales SVG sobre una línea de tiempo
+   Cada barra tiene: fondo semitransparente (100% duración) + color sólido (% avance).
+   Al hacer clic en una barra se abre el panel de detalle.
+   Línea vertical roja punteada marcando "Hoy" si la fecha actual cae en el rango.
+   Filas alternas en #fff y #EDEAE6.
 
-// Configuración de vistas
-const VISTAS = {
-  semana:    { label:'Semana',    dias:7,   colW:120, fmt: d => `S${isoWeek(d)}` },
-  mes:       { label:'Mes',       dias:30,  colW:90,  fmt: d => MESES[d.getMonth()].slice(0,3)+' '+d.getFullYear() },
-  trimestre: { label:'Trimestre', dias:90,  colW:70,  fmt: d => `T${Math.ceil((d.getMonth()+1)/3)} ${d.getFullYear()}` }
-};
+4. PANEL DETALLE (oculto por defecto): panel lateral que aparece al clic en una barra.
+   Muestra nombre, responsable, área, inicio, fin, % avance, dependencias. Botón X para cerrar.
 
-let vistaActual = 'mes';
+5. LEYENDA: cuadros de color por área — EO=#BFB800, TD=#EA7600, IA=#2D6A9F, Gestión=#696158, Riesgo=#C00000.
 
-// Funciones de utilidad de fechas (sin librerías)
-function parseDate(s) { const [y,m,d]=s.split('-'); return new Date(y,m-1,d); }
-function diffDays(a,b) { return Math.round((b-a)/86400000); }
-function addDays(d,n) { const r=new Date(d); r.setDate(r.getDate()+n); return r; }
-function isoWeek(d) { /* implementar cálculo semana ISO */ ... }
-
-// Render principal del SVG
-function renderGantt() {
-  const vista = VISTAS[vistaActual];
-  const colW = vista.colW;
-  const rowH = 40;
-  const leftW = 220; // ancho panel izquierdo de nombres
-
-  // Calcular rango de fechas total
-  const starts = TAREAS.map(t=>parseDate(t.inicio));
-  const ends   = TAREAS.map(t=>parseDate(t.fin));
-  const minDate = new Date(Math.min(...starts));
-  const maxDate = new Date(Math.max(...ends));
-
-  // Calcular columnas de tiempo (por unidad de vista)
-  const cols = generarColumnas(minDate, maxDate, vista);
-
-  const totalW = leftW + cols.length * colW;
-  const totalH = (TAREAS.length + 1) * rowH + 60; // +header +padding
-
-  const svg = document.getElementById('gantt-svg');
-  svg.setAttribute('width', totalW);
-  svg.setAttribute('height', totalH);
-  svg.innerHTML = '';
-
-  // Dibujar fondo alternado de filas
-  TAREAS.forEach((t, i) => {
-    const y = 60 + i * rowH;
-    const rect = svgEl('rect', {x:0, y, width:totalW, height:rowH,
-      fill: i%2===0 ? '#fff' : COLORS.cremaSuave, stroke:'none'});
-    svg.appendChild(rect);
-  });
-
-  // Dibujar columnas de tiempo (header + líneas verticales)
-  cols.forEach((col, ci) => {
-    const x = leftW + ci * colW;
-    // texto de columna
-    svg.appendChild(svgText(col.label, x + colW/2, 30, {
-      'text-anchor':'middle', fill:'#555', 'font-size':'11', 'font-family':'Lato,sans-serif'
-    }));
-    // línea vertical
-    svg.appendChild(svgEl('line', {x1:x, y1:40, x2:x, y2:totalH, stroke:'#ddd', 'stroke-width':'1'}));
-  });
-
-  // Línea separadora header
-  svg.appendChild(svgEl('line', {x1:0,y1:40,x2:totalW,y2:40,stroke:'#bbb','stroke-width':'1.5'}));
-
-  // Dibujar panel izquierdo (nombres de tareas)
-  TAREAS.forEach((t, i) => {
-    const y = 60 + i * rowH;
-    svg.appendChild(svgEl('rect',{x:0,y,width:leftW,height:rowH,fill:'#fff',stroke:'none'}));
-    svg.appendChild(svgText(t.nombre, 10, y+rowH/2+5, {
-      fill:'#333','font-size':'12','font-family':'Lato,sans-serif','font-weight':'600'
-    }));
-    svg.appendChild(svgText(t.responsable, 10, y+rowH/2+18, {
-      fill:'#888','font-size':'10','font-family':'Lato,sans-serif'
-    }));
-    // Línea separadora panel izq
-    svg.appendChild(svgEl('line',{x1:leftW,y1:0,x2:leftW,y2:totalH,stroke:'#ccc','stroke-width':'1.5'}));
-  });
-
-  // Dibujar barras de tareas
-  TAREAS.forEach((t, i) => {
-    const y = 60 + i * rowH + 8;
-    const barH = rowH - 16;
-    const dStart = parseDate(t.inicio);
-    const dEnd   = parseDate(t.fin);
-    const x0 = leftW + dayOffset(minDate, dStart, vista) * colW / vista.dias;
-    const w  = Math.max(diffDays(dStart, dEnd) * colW / vista.dias, 4);
-    const color = AREA_COLOR[t.area] || COLORS.grisTierra;
-
-    // Barra de fondo (total)
-    const barBg = svgEl('rect',{x:x0, y, width:w, height:barH, rx:4, fill:color, opacity:'0.25'});
-    svg.appendChild(barBg);
-
-    // Barra de avance
-    const barFg = svgEl('rect',{x:x0, y, width:w*t.avance/100, height:barH, rx:4, fill:color});
-    svg.appendChild(barFg);
-
-    // Texto de % sobre la barra
-    if (w > 30) {
-      svg.appendChild(svgText(t.avance+'%', x0+w/2, y+barH/2+4, {
-        'text-anchor':'middle', fill:'#fff', 'font-size':'10', 'font-family':'Lato,sans-serif',
-        'font-weight':'700', 'pointer-events':'none'
-      }));
-    }
-
-    // Área clickeable
-    const hitArea = svgEl('rect',{x:x0,y,width:w,height:barH,fill:'transparent',cursor:'pointer'});
-    hitArea.addEventListener('click', () => mostrarDetalle(t));
-    svg.appendChild(hitArea);
-
-    // Hoy — línea vertical roja
-    const hoy = new Date();
-    if (hoy >= minDate && hoy <= maxDate) {
-      const xHoy = leftW + dayOffset(minDate, hoy, vista) * colW / vista.dias;
-      svg.appendChild(svgEl('line',{x1:xHoy,y1:40,x2:xHoy,y2:totalH,
-        stroke:COLORS.rojo,'stroke-width':'2','stroke-dasharray':'4,3',opacity:'0.7'}));
-      svg.appendChild(svgText('Hoy', xHoy+3, 55, {fill:COLORS.rojo,'font-size':'9','font-family':'Lato,sans-serif'}));
-    }
-  });
-}
-
-// Helpers SVG
-function svgEl(tag, attrs) {
-  const el = document.createElementNS('http://www.w3.org/2000/svg', tag);
-  Object.entries(attrs).forEach(([k,v]) => el.setAttribute(k,v));
-  return el;
-}
-function svgText(txt, x, y, attrs) {
-  const el = svgEl('text', {x, y, ...attrs});
-  el.textContent = txt;
-  return el;
-}
-function dayOffset(base, d, vista) { return diffDays(base, d); }
-function generarColumnas(from, to, vista) { /* genera array {label} por unidad de vista */ }
-
-function setVista(v) {
-  vistaActual = v;
-  document.querySelectorAll('.btn-vista').forEach(b => {
-    b.style.background = b.dataset.vista===v ? COLORS.verdeOliva : '#fff';
-    b.style.color      = b.dataset.vista===v ? '#fff' : '#333';
-  });
-  renderGantt();
-}
-
-function mostrarDetalle(t) {
-  document.getElementById('det-nombre').textContent      = t.nombre;
-  document.getElementById('det-resp').textContent        = t.responsable;
-  document.getElementById('det-area').textContent        = t.area;
-  document.getElementById('det-inicio').textContent      = t.inicio;
-  document.getElementById('det-fin').textContent         = t.fin;
-  document.getElementById('det-avance').textContent      = t.avance + '%';
-  document.getElementById('det-deps').textContent        = t.deps.length ? t.deps.join(', ') : 'Ninguna';
-  document.getElementById('panel-detalle').style.display = 'block';
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-  // Calcular y mostrar % avance total
-  const prom = Math.round(TAREAS.reduce((s,t)=>s+t.avance,0)/TAREAS.length);
-  document.getElementById('avance-total').textContent = prom + '% avance total';
-  renderGantt();
-});
+6. FOOTER: "Arauco — Subgerencia de Mejora Continua" centrado, fondo #696158.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGLAS DE DATOS
+DATOS DE LAS TAREAS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Si el contexto/documento tiene tareas, fechas o hitos: extraer y usar directamente
-- Si no hay fechas reales: crear un proyecto forestal típico coherente con el contexto
-- Mínimo 6 tareas, máximo 20
-- Asignar área: EO=actividades Lean/proceso, TD=sistemas/digital, IA=modelos/datos, Gestión=coordinación, Riesgo=bloqueadores
-- Fechas en formato YYYY-MM-DD obligatorio
-- NO uses `...` ni comentarios placeholder en el JS final; implementa TODA la lógica completa y funcional
+Extrae las tareas del contexto recibido (análisis previo o descripción del usuario).
+Si no hay fechas reales, inferir un proyecto forestal típico a partir del contexto.
 
-Responde ÚNICAMENTE con el código HTML completo. Sin markdown. Empieza con <!DOCTYPE html>.""",
+Cada tarea debe tener: id (número), nombre, responsable, área (EO/TD/IA/Gestión/Riesgo),
+inicio (YYYY-MM-DD), fin (YYYY-MM-DD), avance (0-100), deps (array de ids).
+Mínimo 6 tareas, máximo 20.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REQUISITOS JS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Las barras SVG se calculan con aritmética de fechas simple: (fecha - fechaMin) / msPerDay * pixelsPorDia.
+- El cambio de vista (Semana/Mes/Trimestre) recalcula pixelsPorDia y redibuja el SVG.
+- Implementa TODO el código JS completo y funcional, sin pseudocódigo ni placeholders.
+- Usa document.createElementNS para crear elementos SVG.
+
+Responde ÚNICAMENTE con el código HTML completo. Sin texto previo ni posterior. Sin markdown. Empieza con <!DOCTYPE html>.""",
 }
 
 
