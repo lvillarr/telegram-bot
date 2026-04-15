@@ -1070,6 +1070,10 @@ def extract_xlsx(data: bytes) -> tuple[str, dict]:
         if total > 25:
             txt.append(f"... ({total - 25} filas adicionales)")
 
+        # Resumen de estadísticas SOBRE TODAS LAS FILAS — incluido en el texto
+        # para que Claude lo use en análisis y preguntas de seguimiento
+        txt.append("\n--- ESTADÍSTICAS REALES (todas las filas) ---")
+
         # Estadísticas por columna categórica (máx. 20 valores únicos)
         stats = {}
         for col_i, col_name in enumerate(headers):
@@ -1118,6 +1122,14 @@ def extract_xlsx(data: bytes) -> tuple[str, dict]:
                 top20 = all_rows[:20]
         else:
             top20 = all_rows[:20]
+
+        # Vuelca estadísticas en el texto para que Claude las use en análisis
+        for col_name, s in stats.items():
+            if s["tipo"] == "num":
+                txt.append(f"{col_name}: total={s['total']}, suma={s['suma']}, min={s['min']}, max={s['max']}, prom={s['prom']}")
+            else:
+                freq_str = ", ".join(f"{k}: {v}" for k, v in list(s["frecuencias"].items())[:10])
+                txt.append(f"{col_name} ({sum(s['frecuencias'].values())} registros): {freq_str}")
 
         structured[sheet_name] = {
             "headers":  headers,
@@ -1226,10 +1238,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("🤖 Analizando con los agentes...")
 
+    # Para Excel, el contenido incluye estadísticas completas — dar más espacio
+    content_limit = 10000 if ext == ".xlsx" else 6000
     prompt = (
         f"Analiza este documento {tipo} en el contexto operacional forestal de Arauco. "
         f"Identifica datos clave, KPIs, procesos, problemas u oportunidades de mejora.\n\n"
-        f"{content[:6000]}"
+        f"{content[:content_limit]}"
     )
     history  = context.user_data.get("history", [])
     analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
