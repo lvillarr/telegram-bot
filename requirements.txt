@@ -7,3 +7,4 @@ openpyxl
 matplotlib
 pdfplumber
 python-docx
+reportlab

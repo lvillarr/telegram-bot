@@ -714,7 +714,16 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 photo=buf,
                 caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua"
             )
-        elif artifact_type in ("pdf", "gantt"):
+        elif artifact_type == "pdf":
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_pdf(data)
+            titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
+            await query.message.reply_document(
+                document=buf, filename=f"{titulo}.pdf",
+                caption="📄 Informe PDF generado — Arauco Mejora Continua"
+            )
+        elif artifact_type == "gantt":
             html = raw.strip()
             if html.startswith("```"):
                 html = html.split("\n", 1)[-1]
@@ -725,16 +734,10 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await query.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
             buf = io.BytesIO(html.encode("utf-8"))
-            if artifact_type == "pdf":
-                await query.message.reply_document(
-                    document=buf, filename="informe-arauco.html",
-                    caption="📄 Informe listo — abre en browser y usa Archivo → Imprimir → Guardar como PDF"
-                )
-            else:
-                await query.message.reply_document(
-                    document=buf, filename="gantt-arauco.html",
-                    caption="📅 Gantt listo — abre el archivo en tu browser"
-                )
+            await query.message.reply_document(
+                document=buf, filename="gantt-arauco.html",
+                caption="📅 Gantt listo — abre el archivo en tu browser"
+            )
     except json.JSONDecodeError:
         await query.message.reply_text("⚠️ Error al procesar. Intenta de nuevo.")
     except Exception as e:
@@ -969,73 +972,50 @@ Los datos deben ser realistas para el contexto forestal de Arauco pedido.
 Incluye entre 5 y 12 puntos de datos.
 Responde ÚNICAMENTE con el JSON válido, sin explicaciones ni bloques de código markdown.""",
 
-    "pdf": """Eres el Agente DA de Arauco. Genera un informe HTML optimizado para imprimir como PDF.
+    "pdf": """Eres el Agente DA de Arauco. Genera un informe ejecutivo en formato JSON estructurado.
+
+REGLA ABSOLUTA: responde ÚNICAMENTE con JSON válido. Sin texto previo ni posterior. Sin bloques markdown.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CSS OBLIGATORIO PARA IMPRESIÓN
+ESQUEMA JSON OBLIGATORIO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Lato', Arial, sans-serif; font-size: 11pt; color: #222;
-       background: #fff; padding: 0; margin: 0; }
-.page { width: 210mm; min-height: 297mm; padding: 18mm 20mm; margin: 0 auto;
-        background: #fff; }
-@media print {
-  .no-print { display: none !important; }
-  .page { padding: 12mm 16mm; box-shadow: none; }
-  table { page-break-inside: avoid; }
-  h2, h3 { page-break-after: avoid; }
+{
+  "titulo": "Título principal del informe",
+  "subtitulo": "Subtítulo o descripción breve",
+  "fecha": "15 de abril de 2025",
+  "area": "Subgerencia de Mejora Continua",
+  "fuente": "Archivo o sistema de origen",
+  "kpis": [
+    {"label": "Nombre KPI", "valor": "1.234", "unidad": "unidad"}
+  ],
+  "resumen": "Texto del resumen ejecutivo. Puede tener varios párrafos separados por \\n\\n.",
+  "secciones": [
+    {
+      "titulo": "Título de la sección",
+      "tipo": "texto",
+      "contenido": "Texto explicativo de la sección."
+    },
+    {
+      "titulo": "Título de tabla",
+      "tipo": "tabla",
+      "encabezados": ["Col A", "Col B", "Col C"],
+      "filas": [
+        ["Valor 1", "Valor 2", "Valor 3"]
+      ]
+    }
+  ],
+  "conclusiones": "Texto de conclusiones y próximos pasos recomendados."
 }
-@media screen {
-  body { background: #e5e5e5; }
-  .page { box-shadow: 0 2px 16px rgba(0,0,0,0.15); margin: 24px auto; }
-}
-.header-pdf { display: flex; align-items: center; justify-content: space-between;
-              border-bottom: 3px solid #696158; padding-bottom: 12px; margin-bottom: 20px; }
-.header-pdf .titulo-doc { font-size: 16pt; font-weight: 900; color: #696158; }
-.header-pdf .meta { font-size: 8pt; color: #999; text-align: right; line-height: 1.6; }
-h2 { font-size: 12pt; font-weight: 700; color: #696158; margin: 20px 0 8px;
-     border-left: 4px solid #BFB800; padding-left: 8px; }
-h3 { font-size: 10pt; font-weight: 700; color: #333; margin: 14px 0 6px; }
-p  { font-size: 10pt; line-height: 1.6; margin-bottom: 8px; color: #333; }
-.kpi-row { display: flex; gap: 12px; margin: 12px 0; flex-wrap: wrap; }
-.kpi-box { flex: 1; min-width: 110px; border: 1px solid #DFD1A7; border-radius: 6px;
-           padding: 10px 14px; background: #fafafa; }
-.kpi-box .val { font-size: 18pt; font-weight: 900; color: #696158; }
-.kpi-box .lbl { font-size: 7pt; color: #999; text-transform: uppercase; letter-spacing: 0.05em; }
-table { width: 100%; border-collapse: collapse; font-size: 9pt; margin: 10px 0; }
-thead tr { background: #696158; color: #fff; }
-th { padding: 7px 10px; text-align: left; font-weight: 700; font-size: 8pt;
-     text-transform: uppercase; letter-spacing: 0.04em; }
-td { padding: 6px 10px; border-bottom: 1px solid #eee; }
-tbody tr:nth-child(even) { background: #EDEAE6; }
-.footer-pdf { margin-top: 24px; padding-top: 10px; border-top: 1px solid #DFD1A7;
-              font-size: 7pt; color: #aaa; display: flex; justify-content: space-between; }
-.btn-print { display: block; margin: 16px auto; padding: 10px 28px;
-             background: #696158; color: #fff; border: none; border-radius: 6px;
-             font-family: 'Lato', sans-serif; font-size: 11pt; cursor: pointer;
-             font-weight: 700; }
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ESTRUCTURA DEL INFORME
+REGLAS DE CONTENIDO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. Botón "Imprimir / Guardar PDF" (.no-print) arriba del .page
-2. Dentro de .page:
-   a. Header — logo Arauco + título del informe + meta (área, fecha, autor)
-   b. Resumen ejecutivo — 2-3 párrafos con los hallazgos principales
-   c. KPI row — 3-5 métricas clave con .kpi-box
-   d. Secciones con <h2> para cada tema del análisis
-   e. Tablas de datos (sin filtros, estilo limpio para impresión)
-   f. Conclusiones y recomendaciones
-   g. Footer — área, sistema de origen, fecha de generación
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGLAS DE DATOS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXCEL → usa stats para KPIs y totales; muestra_top20 para tablas
-PDF/WORD → extrae secciones, cifras y tablas del texto recibido
-TODOS → nunca inventes cifras; formato chileno 1.234,5
-
-Responde ÚNICAMENTE con el código HTML. Sin markdown. Empieza con <!DOCTYPE html>.""",
+- kpis: entre 3 y 6 métricas clave derivadas del análisis
+- secciones: entre 2 y 5 secciones; alterna texto y tablas según corresponda
+- Las tablas muestran máximo 20 filas (top-20 por relevancia)
+- EXCEL → usa stats para KPIs y totales; muestra_top20 para tablas
+- PDF/WORD → extrae secciones, cifras y tablas del texto recibido
+- NUNCA inventes cifras; usa formato numérico chileno: 1.234,5""",
 
     "gantt": """Eres el Agente DA de Arauco. Tu única tarea es generar un archivo HTML completo y funcional con un diagrama de Gantt interactivo.
 
@@ -1093,6 +1073,163 @@ REQUISITOS JS
 
 Responde ÚNICAMENTE con el código HTML completo. Sin texto previo ni posterior. Sin markdown. Empieza con <!DOCTYPE html>.""",
 }
+
+
+def build_pdf(data: dict) -> io.BytesIO:
+    """Genera un PDF ejecutivo Arauco a partir del JSON estructurado."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
+        HRFlowable, KeepTogether
+    )
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+
+    GRIS    = colors.HexColor("#696158")
+    VERDE   = colors.HexColor("#BFB800")
+    NARANJA = colors.HexColor("#EA7600")
+    CREMA   = colors.HexColor("#EDEAE6")
+    BLANCO  = colors.white
+    NEGRO   = colors.HexColor("#222222")
+    GRIS_L  = colors.HexColor("#999999")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=20*mm, rightMargin=20*mm,
+        topMargin=18*mm, bottomMargin=18*mm,
+        title=data.get("titulo", "Informe Arauco"),
+    )
+
+    # Estilos
+    s_titulo  = ParagraphStyle("titulo",  fontName="Helvetica-Bold",   fontSize=18, textColor=GRIS,  spaceAfter=2*mm)
+    s_sub     = ParagraphStyle("sub",     fontName="Helvetica",        fontSize=10, textColor=GRIS_L, spaceAfter=6*mm)
+    s_meta    = ParagraphStyle("meta",    fontName="Helvetica",        fontSize=8,  textColor=GRIS_L, spaceAfter=2*mm)
+    s_seccion = ParagraphStyle("seccion", fontName="Helvetica-Bold",   fontSize=12, textColor=GRIS,  spaceBefore=6*mm, spaceAfter=3*mm, borderPad=2, leftIndent=4*mm)
+    s_body    = ParagraphStyle("body",    fontName="Helvetica",        fontSize=9,  textColor=NEGRO, leading=14, spaceAfter=3*mm)
+    s_concl   = ParagraphStyle("concl",   fontName="Helvetica-Oblique",fontSize=9,  textColor=NEGRO, leading=14, spaceAfter=3*mm)
+    s_footer  = ParagraphStyle("footer",  fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER)
+    s_kpi_val = ParagraphStyle("kpi_val", fontName="Helvetica-Bold",   fontSize=16, textColor=GRIS,  alignment=TA_CENTER, leading=18)
+    s_kpi_lbl = ParagraphStyle("kpi_lbl", fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER, spaceAfter=0)
+    s_kpi_uni = ParagraphStyle("kpi_uni", fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER)
+
+    story = []
+
+    # ── HEADER ──────────────────────────────────────────────
+    story.append(Paragraph(data.get("titulo", "Informe Ejecutivo"), s_titulo))
+    if data.get("subtitulo"):
+        story.append(Paragraph(data["subtitulo"], s_sub))
+    story.append(Paragraph(
+        f"<b>Área:</b> {data.get('area','Mejora Continua')} &nbsp;|&nbsp; "
+        f"<b>Fecha:</b> {data.get('fecha','')} &nbsp;|&nbsp; "
+        f"<b>Fuente:</b> {data.get('fuente','')}",
+        s_meta
+    ))
+    story.append(HRFlowable(width="100%", thickness=2, color=GRIS, spaceAfter=5*mm))
+
+    # ── KPIs ────────────────────────────────────────────────
+    kpis = data.get("kpis", [])
+    if kpis:
+        n = len(kpis)
+        col_w = (A4[0] - 40*mm) / n
+        kpi_data = [[
+            Paragraph(k.get("valor", ""), s_kpi_val) for k in kpis
+        ], [
+            Paragraph(k.get("label", ""), s_kpi_lbl) for k in kpis
+        ], [
+            Paragraph(k.get("unidad", ""), s_kpi_uni) for k in kpis
+        ]]
+        kpi_table = Table(kpi_data, colWidths=[col_w]*n, rowHeights=[20*mm, 6*mm, 5*mm])
+        kpi_table.setStyle(TableStyle([
+            ("BOX",         (0,0), (-1,-1), 0.5, CREMA),
+            ("INNERGRID",   (0,0), (-1,-1), 0.5, CREMA),
+            ("BACKGROUND",  (0,0), (-1,-1), colors.white),
+            ("TOPPADDING",  (0,0), (-1,-1), 4),
+            ("BOTTOMPADDING",(0,0),(-1,-1), 4),
+            ("LINEBELOW",   (0,0), (-1,0),  1.5, VERDE),
+        ]))
+        story.append(kpi_table)
+        story.append(Spacer(1, 5*mm))
+
+    # ── RESUMEN ─────────────────────────────────────────────
+    resumen = data.get("resumen", "")
+    if resumen:
+        story.append(Paragraph("Resumen Ejecutivo", s_seccion))
+        story.append(HRFlowable(width="100%", thickness=1, color=VERDE, spaceAfter=3*mm))
+        for parr in resumen.split("\n\n"):
+            parr = parr.strip()
+            if parr:
+                story.append(Paragraph(parr, s_body))
+
+    # ── SECCIONES ───────────────────────────────────────────
+    for sec in data.get("secciones", []):
+        titulo_sec = sec.get("titulo", "")
+        tipo       = sec.get("tipo", "texto")
+
+        bloque = [
+            Paragraph(titulo_sec, s_seccion),
+            HRFlowable(width="100%", thickness=1, color=VERDE, spaceAfter=3*mm),
+        ]
+
+        if tipo == "texto":
+            contenido = sec.get("contenido", "")
+            for parr in contenido.split("\n\n"):
+                parr = parr.strip()
+                if parr:
+                    bloque.append(Paragraph(parr, s_body))
+
+        elif tipo == "tabla":
+            encab = sec.get("encabezados", [])
+            filas = sec.get("filas", [])
+            if encab:
+                page_w = A4[0] - 40*mm
+                col_w  = page_w / len(encab)
+                t_data = [[Paragraph(str(h), ParagraphStyle("th", fontName="Helvetica-Bold",
+                           fontSize=8, textColor=BLANCO)) for h in encab]]
+                for fila in filas:
+                    t_data.append([Paragraph(str(v), ParagraphStyle("td", fontName="Helvetica",
+                                   fontSize=8, textColor=NEGRO)) for v in fila])
+                t = Table(t_data, colWidths=[col_w]*len(encab), repeatRows=1)
+                t.setStyle(TableStyle([
+                    ("BACKGROUND",    (0,0),  (-1,0),  GRIS),
+                    ("TEXTCOLOR",     (0,0),  (-1,0),  BLANCO),
+                    ("ROWBACKGROUNDS",(0,1),  (-1,-1), [colors.white, CREMA]),
+                    ("GRID",          (0,0),  (-1,-1), 0.3, colors.HexColor("#dddddd")),
+                    ("TOPPADDING",    (0,0),  (-1,-1), 4),
+                    ("BOTTOMPADDING", (0,0),  (-1,-1), 4),
+                    ("LEFTPADDING",   (0,0),  (-1,-1), 6),
+                ]))
+                bloque.append(t)
+
+        story.append(KeepTogether(bloque))
+        story.append(Spacer(1, 3*mm))
+
+    # ── CONCLUSIONES ────────────────────────────────────────
+    conclusiones = data.get("conclusiones", "")
+    if conclusiones:
+        bloque_c = [
+            Paragraph("Conclusiones y Recomendaciones", s_seccion),
+            HRFlowable(width="100%", thickness=1, color=NARANJA, spaceAfter=3*mm),
+        ]
+        for parr in conclusiones.split("\n\n"):
+            parr = parr.strip()
+            if parr:
+                bloque_c.append(Paragraph(parr, s_concl))
+        story.append(KeepTogether(bloque_c))
+
+    # ── FOOTER ──────────────────────────────────────────────
+    story.append(Spacer(1, 8*mm))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=CREMA, spaceAfter=3*mm))
+    story.append(Paragraph(
+        f"Arauco — Subgerencia de Mejora Continua &nbsp;|&nbsp; {data.get('fecha','')} &nbsp;|&nbsp; {data.get('fuente','')}",
+        s_footer
+    ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
 
 
 def build_excel(data: dict) -> io.BytesIO:
@@ -1217,12 +1354,12 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
     artifact_model = "claude-sonnet-4-6"
-    artifact_tokens = 16000 if artifact_type in ("html", "pdf", "gantt") else 2000
+    artifact_tokens = 16000 if artifact_type in ("html", "gantt") else 4000
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
     try:
-        if artifact_type in ("html", "pdf", "gantt"):
+        if artifact_type in ("html", "gantt"):
             html = raw.strip()
             if html.startswith("```"):
                 html = html.split("\n", 1)[-1]
@@ -1233,14 +1370,23 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
             buf = io.BytesIO(html.encode("utf-8"))
-            filenames = {"html": "dashboard-arauco.html", "pdf": "informe-arauco.html", "gantt": "gantt-arauco.html"}
+            filenames = {"html": "dashboard-arauco.html", "gantt": "gantt-arauco.html"}
             captions  = {
                 "html":  "🌲 Dashboard listo — abre el archivo en tu browser",
-                "pdf":   "📄 Informe listo — abre en browser y usa Archivo → Imprimir → Guardar como PDF",
                 "gantt": "📅 Gantt listo — abre el archivo en tu browser",
             }
             await update.message.reply_document(document=buf, filename=filenames[artifact_type],
                                                 caption=captions[artifact_type])
+
+        elif artifact_type == "pdf":
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_pdf(data)
+            titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
+            await update.message.reply_document(
+                document=buf, filename=f"{titulo}.pdf",
+                caption="📄 Informe PDF generado — Arauco Mejora Continua"
+            )
 
         elif artifact_type == "excel":
             cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
