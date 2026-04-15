@@ -542,20 +542,34 @@ async def modelo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 CODE_BLOCK_RE = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
-EXT_MAP = {"python": "py", "py": "py", "sql": "sql", "bash": "sh", "sh": "sh", "r": "r", "javascript": "js", "js": "js"}
+EXT_MAP = {
+    "python": "py", "py": "py",
+    "sql": "sql",
+    "bash": "sh", "sh": "sh",
+    "r": "r",
+    "javascript": "js", "js": "js",
+    "html": "html",
+    "css": "css",
+    "json": "json",
+}
+# Captions y nombres de archivo para tipos de bloque específicos
+FILE_META = {
+    "html": ("dashboard-arauco.html", "🌐 Abre este archivo en tu browser"),
+    "css":  ("estilos.css",           "🎨 Hoja de estilos"),
+    "json": ("datos.json",            "📋 Datos en JSON"),
+}
 
 async def send_reply(update: Update, text: str, reply_markup=None):
     """
     Envía la respuesta de Claude a Telegram.
-    Si la respuesta contiene un bloque de código largo (>10 líneas), lo extrae
-    y lo envía como archivo adjunto en lugar de mostrarlo inline.
+    Bloques de código ≥10 líneas se extraen y envían como archivo adjunto.
+    Bloques HTML se envían como .html con caption descriptivo.
     """
-    # Detectar bloques de código en la respuesta
     code_blocks = CODE_BLOCK_RE.findall(text)
     large_blocks = [(lang, code) for lang, code in code_blocks if code.count('\n') >= 10]
 
     if not large_blocks:
-        # Sin código largo — envío normal
+        # Sin código largo — envío normal con teclado de artefactos
         try:
             await update.message.reply_text(
                 fmt(text) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
@@ -569,26 +583,31 @@ async def send_reply(update: Update, text: str, reply_markup=None):
             )
         return
 
-    # Hay bloques de código largos — separar texto del código
+    # Hay bloques de código largos — enviar texto limpio primero
     clean_text = CODE_BLOCK_RE.sub("", text).strip()
-
-    # Enviar primero el texto explicativo (si hay)
     if clean_text:
         try:
             await update.message.reply_text(
-                fmt(clean_text) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
+                fmt(clean_text),
                 reply_markup=reply_markup,
                 parse_mode="HTML"
             )
         except Exception:
             await update.message.reply_text(clean_text, reply_markup=reply_markup)
 
-    # Enviar cada bloque de código como archivo
+    # Enviar cada bloque como archivo
     for i, (lang, code) in enumerate(large_blocks, 1):
-        ext = EXT_MAP.get(lang.lower(), "txt")
-        filename = f"script_{i}.{ext}" if len(large_blocks) > 1 else f"script.{ext}"
+        lang_key = lang.lower()
+        ext = EXT_MAP.get(lang_key, "txt")
+        if lang_key in FILE_META:
+            filename, caption = FILE_META[lang_key]
+            if len(large_blocks) > 1:
+                base, dot_ext = filename.rsplit(".", 1)
+                filename = f"{base}_{i}.{dot_ext}"
+        else:
+            filename = f"script_{i}.{ext}" if len(large_blocks) > 1 else f"script.{ext}"
+            caption  = f"📎 {filename} — copia y ejecuta en tu entorno"
         buf = io.BytesIO(code.strip().encode("utf-8"))
-        caption = f"📎 {filename} — copia y ejecuta en tu entorno"
         await update.message.reply_document(document=buf, filename=filename, caption=caption)
 
 
