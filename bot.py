@@ -846,12 +846,32 @@ ORDEN DE GENERACIÓN OBLIGATORIO
 CRÍTICO: El <script> SIEMPRE va antes de la tabla. Si se corta el HTML, los gráficos quedan vacíos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGLAS DE DATOS
+REGLAS DE DATOS — aplica según el tipo de archivo recibido
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Usa los valores de `stats` para KPIs y gráficos — representan TODAS las filas del Excel
-- Usa `muestra_top20` para poblar el array DATOS[] de la tabla
+
+EXCEL (datos estructurados JSON):
+- Usa `stats[col].suma/prom/min/max` para KPI cards numéricos
+- Usa `stats[col].frecuencias` para gráficos de distribución (barras, dona)
+- Usa `muestra_top20` para poblar el array DATOS[] de la tabla filtrable
+- Los filtros deben usar los valores únicos de `stats[col].frecuencias`
+- Anota siempre: "Estadísticas sobre N registros totales — tabla muestra top-20"
+
+PDF (texto con marcadores [Página N/Total]):
+- Extrae tablas, cifras y listas del texto para construir el array DATOS[]
+- Usa las cifras encontradas para KPI cards y gráficos
+- Cita la página de origen: "Fuente: Página N"
+- Si no hay tablas claras, muestra el texto estructurado por secciones
+
+WORD (texto con ## secciones y [Tabla N]):
+- Extrae datos de las secciones [Tabla N] para DATOS[] y gráficos
+- Respeta la jerarquía de secciones (## Título → sección del dashboard)
+- Usa cifras encontradas en el texto para KPI cards
+- Cita la sección de origen de cada dato
+
+REGLA UNIVERSAL:
 - Nunca inventes cifras — si no están en los datos recibidos, omite esa métrica
-- Formato chileno: 1.234,5 (punto miles, coma decimal)
+- Formato numérico chileno: 1.234,5 (punto miles, coma decimal)
+- Si los datos son insuficientes para un gráfico, reemplázalo por una tabla de texto
 
 Responde ÚNICAMENTE con el código HTML. Sin markdown, sin explicaciones. Empieza con <!DOCTYPE html>.""",
 
