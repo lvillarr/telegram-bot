@@ -1011,29 +1011,60 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 SUPPORTED_DOCS = {".pdf", ".docx", ".xlsx"}
 
 def extract_pdf(data: bytes) -> str:
-    """Extrae texto de un PDF (máx. 10 páginas)."""
+    """Extrae texto de un PDF con metadata de estructura."""
     parts = []
     with pdfplumber.open(io.BytesIO(data)) as pdf:
-        for page in pdf.pages[:10]:
+        total_pages = len(pdf.pages)
+        parts.append(f"--- DOCUMENTO PDF: {total_pages} páginas en total ---")
+        for i, page in enumerate(pdf.pages, 1):
+            page_parts = []
             text = page.extract_text()
             if text:
-                parts.append(text)
+                page_parts.append(text.strip())
             for table in page.extract_tables():
                 for row in table:
-                    parts.append(" | ".join(str(c or "") for c in row))
-    return "\n\n".join(parts)
+                    page_parts.append(" | ".join(str(c or "") for c in row))
+            if page_parts:
+                parts.append(f"\n[Página {i}/{total_pages}]")
+                parts.extend(page_parts)
+        if total_pages > len(pdf.pages):
+            parts.append(f"\n... ({total_pages - len(pdf.pages)} páginas adicionales no incluidas)")
+    full = "\n".join(parts)
+    total_chars = len(full)
+    parts.insert(1, f"--- Total caracteres extraídos: {total_chars} ---")
+    return "\n".join(parts)
 
 
 def extract_docx(data: bytes) -> str:
-    """Extrae texto y tablas de un documento Word."""
+    """Extrae texto, estructura y tablas de un documento Word."""
     doc = DocxDocument(io.BytesIO(data))
     parts = []
+
+    # Metadata de estructura
+    headings = [p.text.strip() for p in doc.paragraphs if p.style.name.startswith("Heading") and p.text.strip()]
+    n_paras  = sum(1 for p in doc.paragraphs if p.text.strip())
+    n_tables = len(doc.tables)
+    parts.append(f"--- DOCUMENTO WORD: {n_paras} párrafos, {n_tables} tablas ---")
+    if headings:
+        parts.append("--- SECCIONES: " + " | ".join(headings[:20]) + " ---")
+
+    # Contenido con marcadores de sección
     for para in doc.paragraphs:
-        if para.text.strip():
-            parts.append(para.text)
-    for table in doc.tables:
+        if not para.text.strip():
+            continue
+        if para.style.name.startswith("Heading"):
+            parts.append(f"\n## {para.text.strip()}")
+        else:
+            parts.append(para.text.strip())
+
+    # Tablas con header explícito
+    for t_idx, table in enumerate(doc.tables, 1):
+        parts.append(f"\n[Tabla {t_idx}]")
         for row in table.rows:
             parts.append(" | ".join(cell.text.strip() for cell in row.cells))
+
+    full = "\n".join(parts)
+    parts.insert(2, f"--- Total caracteres extraídos: {len(full)} ---")
     return "\n".join(parts)
 
 
@@ -1238,12 +1269,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text("🤖 Analizando con los agentes...")
 
-    # Para Excel, el contenido incluye estadísticas completas — dar más espacio
-    content_limit = 10000 if ext == ".xlsx" else 6000
+    # 10.000 chars para todos los tipos — Excel incluye stats, PDF/Word incluyen estructura
     prompt = (
         f"Analiza este documento {tipo} en el contexto operacional forestal de Arauco. "
         f"Identifica datos clave, KPIs, procesos, problemas u oportunidades de mejora.\n\n"
-        f"{content[:content_limit]}"
+        f"{content[:10000]}"
     )
     history  = context.user_data.get("history", [])
     analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
