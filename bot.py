@@ -757,185 +757,153 @@ ARTIFACT_PROMPTS = {
 Genera un dashboard HTML interactivo, completo y autocontenido basado en los datos recibidos.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IDENTIDAD VISUAL ARAUCO (aplica en silencio)
+CSS BASE OBLIGATORIO — incluye esto en <style>
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Paleta:
-  #696158  Gris Tierra   → navbar, headers, texto principal
-  #BFB800  Verde Oliva   → acentos positivos, badges OK
-  #EA7600  Naranja       → alertas, KPIs críticos, botones
-  #DFD1A7  Crema         → fondos alternos, separadores
-  #FFFFFF  Blanco        → fondo de tarjetas
-
-Tipografía: Lato (Google Fonts, pesos 300/400/700/900)
-Logo: https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png (height="32" en header oscuro)
-Diseño: border-radius 12-20px, box-shadow suave `0 2px 12px rgba(105,97,88,0.10)`
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Lato', -apple-system, sans-serif; letter-spacing: -0.3px;
+       background: #f5f5f5; color: #333; }
+.dashboard-header { background: #696158; color: #fff; padding: 24px 32px;
+                    display: flex; align-items: center; justify-content: space-between; }
+.dashboard-title { font-size: 1.4rem; font-weight: 700; }
+.dashboard-subtitle { font-size: 0.85rem; color: rgba(255,255,255,0.7); font-weight: 300; }
+.dashboard { max-width: 1200px; margin: 0 auto; padding: 24px; }
+.grid { display: grid; gap: 16px; }
+.grid-2 { grid-template-columns: repeat(2, 1fr); }
+.grid-3 { grid-template-columns: repeat(3, 1fr); }
+.grid-4 { grid-template-columns: repeat(4, 1fr); }
+.card { background: #fff; border-radius: 10px; padding: 20px;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #eee; }
+.kpi-value { font-size: 2rem; font-weight: 900; color: #696158; }
+.kpi-label { font-size: 0.75rem; color: #999; text-transform: uppercase;
+             letter-spacing: 0.05em; margin-bottom: 4px; }
+.kpi-change { font-size: 0.85rem; margin-top: 6px; font-weight: 700; }
+.kpi-change.positive { color: #BFB800; }
+.kpi-change.negative { color: #C00000; }
+.kpi-change.neutral  { color: #999; }
+.section-title { font-size: 1rem; font-weight: 700; color: #696158;
+                 margin: 24px 0 12px; border-left: 4px solid #BFB800; padding-left: 10px; }
+.filtros-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+               background: #fff; padding: 14px 20px; border-radius: 10px;
+               box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 16px; }
+.filtros-bar select { padding: 7px 12px; border: 1px solid #DFD1A7; border-radius: 6px;
+                      font-family: 'Lato', sans-serif; font-size: 0.85rem; color: #696158;
+                      background: #fafafa; cursor: pointer; }
+.filtros-bar select:focus { outline: none; border-color: #696158; }
+.btn-limpiar { padding: 7px 14px; background: #EA7600; color: #fff; border: none;
+               border-radius: 6px; font-family: 'Lato', sans-serif; font-size: 0.85rem;
+               cursor: pointer; font-weight: 700; }
+.btn-limpiar:hover { background: #c96300; }
+.conteo-badge { font-size: 0.8rem; color: #999; margin-left: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+thead tr { background: #696158; color: #fff; }
+th { padding: 10px 12px; text-align: left; font-weight: 700;
+     text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.04em; }
+td { padding: 8px 12px; border-bottom: 1px solid #eee; }
+tbody tr:nth-child(even) { background: #EDEAE6; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
+         font-size: 0.75rem; font-weight: 700; }
+.badge-ok  { background: #BFB800; color: #fff; }
+.badge-alerta { background: #EA7600; color: #fff; }
+.badge-null   { background: #ccc; color: #555; }
+.dashboard-footer { text-align: center; padding: 24px; font-size: 0.75rem;
+                    color: #999; border-top: 1px solid #eee; margin-top: 32px; }
+@media (max-width: 768px) {
+  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
+}
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ESTRUCTURA OBLIGATORIA DEL DASHBOARD
+TECNOLOGÍAS DE VISUALIZACIÓN — elige la más adecuada
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Chart.js  → barras, líneas, dona, radar, scatter (siempre incluir)
+D3.js     → treemaps, sankeys, mapas, force graphs (incluir solo si aplica)
+SVG puro  → gauges, semáforos, diagramas de flujo custom
+HTML/CSS  → KPI cards, tablas, grids, indicadores de estado
 
-1. NAVBAR — logo Arauco + título del reporte + subtítulo (fuente y fecha)
-
-2. KPI CARDS — mínimo 4 tarjetas con métricas reales de los datos:
-   - Total registros, sumas, promedios, porcentajes clave
-   - Usa colores: verde-oliva para positivo, naranja para alerta, gris para neutro
-
-3. SECCIÓN DE FILTROS INTERACTIVOS — OBLIGATORIA
-   - Un <select> por cada columna categórica relevante (máx. 4 filtros)
-   - Cada <select> llama a aplicarFiltros() en onchange
-   - Botón "✕ Limpiar filtros" que resetea todos los selects y llama aplicarFiltros()
-   - Contador de registros visibles: <span id="conteo">N registros</span>
-
-4. GRÁFICOS Chart.js — mínimo 2:
-   - Barras horizontales para rankings (top-10 categorías)
-   - Dona para distribuciones (estados, tipos, categorías binarias)
-   - Cada gráfico tiene un Chart instance en una variable (ej: let chartBarras, chartDona)
-   - Los gráficos SE ACTUALIZAN cuando cambian los filtros (ver JS obligatorio)
-
-5. TABLA FILTRABLE:
-   - Header con fondo #696158 y texto blanco
-   - Filas alternas blanco/#DFD1A7
-   - Máx. 50 filas visibles
-   - Se regenera completamente al filtrar (innerHTML del tbody)
-
-6. FOOTER — "Arauco — Subgerencia de Mejora Continua | Generado por Agente DA"
+CDN:
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- D3 solo si necesitas visualizaciones complejas: -->
+<!-- <script src="https://cdn.jsdelivr.net/npm/d3@7"></script> -->
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-JS OBLIGATORIO — copia esta estructura EXACTA y complétala con los datos reales
+ESTRUCTURA DEL DASHBOARD
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. <head> — CSS base + CDNs
+2. Header — logo Arauco blanco + título + subtítulo con fuente y fecha
+3. KPI cards — .grid.grid-4, mínimo 4, con .kpi-label / .kpi-value / .kpi-change
+4. Filtros — .filtros-bar con <select> por columna categórica + botón limpiar + conteo
+5. Gráficos — mínimo 2 canvas Chart.js en .grid.grid-2 dentro de .card
+6. <script> con TODA la lógica JS ← AQUÍ, ANTES de la tabla
+7. Tabla filtrable — dentro de .card con overflow-x:auto
+8. Footer
 
-// 1. Datos embebidos — un objeto por fila de muestra_top20
-//    Las claves son los nombres de columna exactos del archivo
-const DATOS = [
-  { "COL1": "ValA", "COL2": 123, "COL3": "CatX" },   // ← reemplaza con datos reales
-  // ... más filas
-];
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+JS OBLIGATORIO — estructura exacta, completa con datos reales
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+const COLORS = {
+  grisTierra:'#696158', verdeOliva:'#BFB800', naranja:'#EA7600',
+  crema:'#DFD1A7', blanco:'#FFFFFF', rojo:'#C00000'
+};
 
-// 2. Columnas que tienen filtro — usa los nombres exactos de columna
-const FILTROS_COLS = ["COL_CATEGORICA_1", "COL_CATEGORICA_2"];  // ← reemplaza
+// Filas de datos — objetos con claves = nombres exactos de columna
+const DATOS = [ /* { "COL1": val, "COL2": val, ... } — poblar con muestra_top20 real */ ];
 
-// 3. Referencias a los Chart instances — una por gráfico
-let charts = {};
+// Columnas categóricas con filtro (nombres exactos de columna)
+const FILTROS_COLS = [ /* "COL_A", "COL_B" */ ];
 
-// 4. Función principal — filtra DATOS y actualiza TODO
+// Referencias a Chart instances (para poder actualizarlos)
+const charts = {};
+
 function aplicarFiltros() {
-  // Leer valor actual de cada select
   const vals = {};
   FILTROS_COLS.forEach(col => {
     const el = document.getElementById('f-' + col);
     if (el) vals[col] = el.value;
   });
-
-  // Filtrar el dataset
   const filtrados = DATOS.filter(row =>
     FILTROS_COLS.every(col => !vals[col] || String(row[col]) === vals[col])
   );
-
-  // Actualizar contador
   document.getElementById('conteo').textContent = filtrados.length + ' registros';
-
-  // Actualizar tabla
   renderTabla(filtrados);
-
-  // Actualizar TODOS los gráficos con los datos filtrados
   actualizarGraficos(filtrados);
 }
 
-// 5. Renderiza la tabla con las filas filtradas
 function renderTabla(filas) {
-  const tbody = document.getElementById('tabla-body');
-  tbody.innerHTML = filas.slice(0, 50).map((row, i) => {
-    const bg = i % 2 === 0 ? '#fff' : '#DFD1A7';
-    // ← genera aquí los <td> con los campos relevantes
-    return `<tr style="background:${bg}">
-      <td style="padding:8px 12px;border-bottom:1px solid #DFD1A7">${row['COL1'] ?? ''}</td>
-      <td style="padding:8px 12px;border-bottom:1px solid #DFD1A7">${row['COL2'] ?? ''}</td>
-    </tr>`;
+  document.getElementById('tabla-body').innerHTML = filas.slice(0, 50).map((row, i) => {
+    /* genera <td> con los campos relevantes — aplica .badge según valor */
+    return `<tr>${ Object.values(row).map(v => `<td>${v ?? ''}</td>`).join('') }</tr>`;
   }).join('');
 }
 
-// 6. Recalcula y actualiza los gráficos con el subconjunto filtrado
 function actualizarGraficos(filas) {
-  // Ejemplo para un gráfico de barras por COL_CATEGORICA_1:
-  const conteo = {};
-  filas.forEach(row => {
-    const v = String(row['COL_CATEGORICA_1'] ?? 'Sin dato');
-    conteo[v] = (conteo[v] || 0) + 1;
-  });
-  const labels = Object.keys(conteo).slice(0, 10);
-  const values = labels.map(l => conteo[l]);
-
-  if (charts.barras) {
-    charts.barras.data.labels = labels;
-    charts.barras.data.datasets[0].data = values;
-    charts.barras.update();
-  }
-  // ← repite para cada chart instance (charts.dona, charts.linea, etc.)
+  /* Para cada chart: recalcula labels/values desde filas, luego chart.update() */
+  /* Ejemplo barras:
+  const cnt = {};
+  filas.forEach(r => { const v = String(r['COL_A'] ?? '-'); cnt[v] = (cnt[v]||0)+1; });
+  charts.barras.data.labels = Object.keys(cnt).slice(0,10);
+  charts.barras.data.datasets[0].data = Object.values(cnt).slice(0,10);
+  charts.barras.update();
+  */
 }
 
-// 7. Limpia todos los filtros y re-aplica
 function limpiarFiltros() {
-  FILTROS_COLS.forEach(col => {
-    const el = document.getElementById('f-' + col);
-    if (el) el.value = '';
-  });
+  FILTROS_COLS.forEach(col => { const el = document.getElementById('f-'+col); if(el) el.value=''; });
   aplicarFiltros();
 }
 
-// 8. Inicialización al cargar la página
 window.addEventListener('DOMContentLoaded', () => {
-  // Crear gráficos Chart.js iniciales con datos completos
-  charts.barras = new Chart(document.getElementById('canvas-barras'), { /* config */ });
-  // charts.dona  = new Chart(document.getElementById('canvas-dona'),   { /* config */ });
-
-  // Render inicial
-  aplicarFiltros();
+  /* Crear cada Chart instance y asignarlo a charts.nombre */
+  /* charts.barras = new Chart(document.getElementById('canvas-barras'), { type:'bar', ... }); */
+  aplicarFiltros();  // render inicial
 });
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DEPENDENCIAS CDN
+REGLAS DE DATOS
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ORDEN DE GENERACIÓN OBLIGATORIO
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. <!DOCTYPE html> + <head> (CSS inline completo + CDN links)
-2. <body> → navbar → KPI cards → sección filtros → canvas gráficos
-3. <script> con TODO el JS (datos embebidos + lógica filtros + Chart.js) ← AQUÍ, ANTES de la tabla
-4. Tabla filtrable
-5. Footer + </body></html>
-
-CRÍTICO: El <script> SIEMPRE va antes de la tabla. Si se corta el HTML, los gráficos quedan vacíos.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGLAS DE DATOS — aplica según el tipo de archivo recibido
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-EXCEL (datos estructurados JSON):
-- Usa `stats[col].suma/prom/min/max` para KPI cards numéricos
-- Usa `stats[col].frecuencias` para gráficos de distribución (barras, dona)
-- Usa `muestra_top20` para poblar el array DATOS[] de la tabla filtrable
-- Los filtros deben usar los valores únicos de `stats[col].frecuencias`
-- Anota siempre: "Estadísticas sobre N registros totales — tabla muestra top-20"
-
-PDF (texto con marcadores [Página N/Total]):
-- Extrae tablas, cifras y listas del texto para construir el array DATOS[]
-- Usa las cifras encontradas para KPI cards y gráficos
-- Cita la página de origen: "Fuente: Página N"
-- Si no hay tablas claras, muestra el texto estructurado por secciones
-
-WORD (texto con ## secciones y [Tabla N]):
-- Extrae datos de las secciones [Tabla N] para DATOS[] y gráficos
-- Respeta la jerarquía de secciones (## Título → sección del dashboard)
-- Usa cifras encontradas en el texto para KPI cards
-- Cita la sección de origen de cada dato
-
-REGLA UNIVERSAL:
-- Nunca inventes cifras — si no están en los datos recibidos, omite esa métrica
-- Formato numérico chileno: 1.234,5 (punto miles, coma decimal)
-- Si los datos son insuficientes para un gráfico, reemplázalo por una tabla de texto
+EXCEL → usa stats[col].frecuencias para gráficos y opciones de filtro; muestra_top20 para DATOS[]
+PDF   → extrae tablas y cifras del texto; cita [Página N] como fuente
+WORD  → extrae [Tabla N] para DATOS[]; usa ## secciones como secciones del dashboard
+TODOS → nunca inventes cifras; formato chileno 1.234,5; badge-null para valores vacíos/nulos
 
 Responde ÚNICAMENTE con el código HTML. Sin markdown, sin explicaciones. Empieza con <!DOCTYPE html>.""",
 
