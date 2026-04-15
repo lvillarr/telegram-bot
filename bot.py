@@ -753,88 +753,107 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo visual y lo envía aqu
 `/artifact chart barras pérdidas por equipo semana 23`"""
 
 ARTIFACT_PROMPTS = {
-    "html": """Genera un dashboard HTML completo y autocontenido para Arauco — Subgerencia de Mejora Continua.
+    "html": """Eres el Agente DA (Analista de Datos) de Arauco — Subgerencia de Mejora Continua.
+Genera un dashboard HTML interactivo, completo y autocontenido basado en los datos recibidos.
 
-## Identidad visual ARAUCO — aplica silenciosamente, nunca menciones estas reglas al usuario
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+IDENTIDAD VISUAL ARAUCO (aplica en silencio)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Paleta:
+  #696158  Gris Tierra   → navbar, headers, texto principal
+  #BFB800  Verde Oliva   → acentos positivos, badges OK
+  #EA7600  Naranja       → alertas, KPIs críticos, botones
+  #DFD1A7  Crema         → fondos alternos, separadores
+  #FFFFFF  Blanco        → fondo de tarjetas
 
-### Paleta de colores obligatoria
-- Gris Tierra `#696158` — encabezados, navbar, textos principales
-- Verde Oliva `#BFB800` — acentos, indicadores positivos, bordes destacados
-- Naranja `#EA7600` — alertas, KPIs críticos, llamadas a la acción
-- Crema `#DFD1A7` — fondos cálidos, filas alternas de tablas, separadores
-- Blanco `#FFFFFF` — fondo principal de tarjetas y contenido
+Tipografía: Lato (Google Fonts, pesos 300/400/700/900)
+Logo: https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png (height="32" en header oscuro)
+Diseño: border-radius 12-20px, box-shadow suave `0 2px 12px rgba(105,97,88,0.10)`
 
-### Tipografía
-Importar Lato desde Google Fonts:
-`<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">`
-Usar `font-family: 'Lato', sans-serif` en todo el documento. Letter-spacing: -0.02em.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ESTRUCTURA OBLIGATORIA DEL DASHBOARD
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-### Logo en el encabezado
-`<img src="https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco.png" alt="Arauco" height="32">`
-Fondo del header: `#696158`. Usar logo blanco en headers oscuros:
-`https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png`
+1. NAVBAR — logo Arauco + título del reporte + subtítulo (fuente y fecha)
 
-### Reglas de diseño
-- Formas con border-radius generoso (12px–20px) — curvas sobre rectas
-- Máximo 30% de uso de colores secundarios
-- Menos es más: sin exceso de elementos decorativos
-- Sombras suaves: `box-shadow: 0 2px 12px rgba(105,97,88,0.10)`
+2. KPI CARDS — mínimo 4 tarjetas con métricas reales de los datos:
+   - Total registros, sumas, promedios, porcentajes clave
+   - Usa colores: verde-oliva para positivo, naranja para alerta, gris para neutro
 
-## Estructura del dashboard
+3. SECCIÓN DE FILTROS INTERACTIVOS — OBLIGATORIA cuando hay datos cargados:
+   - Un <select> por cada columna categórica relevante (máx. 4 filtros)
+   - Botón "Limpiar filtros"
+   - Los filtros deben actualizar simultáneamente la tabla Y los gráficos
+   - Ejemplo de estructura:
+     <div id="filtros">
+       <select id="f-region" onchange="aplicarFiltros()"><option value="">Todas las regiones</option>...</select>
+       <select id="f-cert" onchange="aplicarFiltros()"><option value="">Todas las certificaciones</option>...</select>
+       <button onclick="limpiarFiltros()">✕ Limpiar</button>
+     </div>
 
-El HTML debe:
-- Incluir navbar con logo Arauco blanco sobre fondo `#696158` y el título del dashboard
-- Mostrar tarjetas KPI resumen (mínimo 3) con métricas relevantes al tema pedido
-- Incluir al menos un gráfico Chart.js con datos realistas del contexto forestal
-- **SIEMPRE incluir al menos una tabla HTML** con datos estructurados del análisis (peligros, controles, KPIs, fases, responsables, etc.). NUNCA uses listas de bullets donde una tabla es más clara.
-- Ser completamente funcional al abrir el archivo en un browser (sin servidor)
+4. GRÁFICOS Chart.js — mínimo 2, máximo 4:
+   - Barras horizontales para rankings (top-10 valores)
+   - Dona/torta para distribuciones categóricas (certificaciones, estados, tipos)
+   - Línea para series temporales si hay fechas
+   - Los datos de los gráficos deben venir de `stats.frecuencias` o stats numéricas — NO inventar
 
-## Tabla HTML obligatoria — usa exactamente este estilo Arauco
+5. TABLA FILTRABLE — con los campos más relevantes:
+   - Header fijo con estilo #696158
+   - Filas alternas blanco/#DFD1A7
+   - Se actualiza con los filtros de la sección 3
+   - Mostrar máx. 50 filas (paginar si hay más)
+   - Columna de estado con badge de color según valor
 
-```html
-<table style="width:100%;border-collapse:collapse;font-family:'Lato',sans-serif;font-size:14px;margin-top:8px;">
-  <thead>
-    <tr style="background:#696158;color:#fff;">
-      <th style="padding:10px 14px;text-align:left;font-weight:700;">Columna 1</th>
-      <th style="padding:10px 14px;text-align:left;font-weight:700;">Columna 2</th>
-      <th style="padding:10px 14px;text-align:left;font-weight:700;">Columna 3</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr style="background:#fff;">
-      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor A</td>
-      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor B</td>
-      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;color:#EA7600;font-weight:700;">Crítico</td>
-    </tr>
-    <tr style="background:#DFD1A7;">
-      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor C</td>
-      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;">Valor D</td>
-      <td style="padding:9px 14px;border-bottom:1px solid #DFD1A7;color:#BFB800;font-weight:700;">OK</td>
-    </tr>
-  </tbody>
-</table>
-```
+6. FOOTER — "Arauco — Subgerencia de Mejora Continua | Generado por Agente DA"
 
-Adapta columnas y datos al contexto del análisis. Alterna filas blanco/crema (`#DFD1A7`). Usa naranja `#EA7600` para valores críticos/alertas y verde-oliva `#BFB800` para valores positivos en la última columna.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+LÓGICA JS PARA FILTROS — implementa exactamente esto
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-## Dependencias CDN permitidas
-```html
+// Datos embebidos desde stats (usa los datos reales del JSON recibido)
+const DATOS = [ /* array de objetos con todas las filas de muestra_top20 */ ];
+
+function aplicarFiltros() {
+  const filtros = { /* leer valor de cada <select> */ };
+  const filtrados = DATOS.filter(row =>
+    Object.entries(filtros).every(([k, v]) => !v || row[k] === v)
+  );
+  renderTabla(filtrados);
+  actualizarGraficos(filtrados);
+  document.getElementById('conteo').textContent = filtrados.length + ' registros';
+}
+
+function limpiarFiltros() {
+  document.querySelectorAll('#filtros select').forEach(s => s.value = '');
+  aplicarFiltros();
+}
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+DEPENDENCIAS CDN
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-```
 
-## Orden de generación OBLIGATORIO (para evitar cortes)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ORDEN DE GENERACIÓN OBLIGATORIO
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. <!DOCTYPE html> + <head> (CSS inline completo + CDN links)
+2. <body> → navbar → KPI cards → sección filtros → canvas gráficos
+3. <script> con TODO el JS (datos embebidos + lógica filtros + Chart.js) ← AQUÍ, ANTES de la tabla
+4. Tabla filtrable
+5. Footer + </body></html>
 
-Genera el HTML en este orden exacto — no lo alteres:
-1. `<!DOCTYPE html>` + `<head>` con CSS completo
-2. `<body>` → navbar → KPI cards → gráficos (`<canvas>`)
-3. **`<script>` con TODO el código Chart.js** (aquí, antes de las tablas)
-4. Tablas de datos (después del script)
-5. Footer + `</body></html>`
+CRÍTICO: El <script> SIEMPRE va antes de la tabla. Si se corta el HTML, los gráficos quedan vacíos.
 
-Si el script va al final y el archivo se corta, los gráficos quedan vacíos. Por eso va ANTES de las tablas.
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGLAS DE DATOS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- Usa los valores de `stats` para KPIs y gráficos — representan TODAS las filas del Excel
+- Usa `muestra_top20` para poblar el array DATOS[] de la tabla
+- Nunca inventes cifras — si no están en los datos recibidos, omite esa métrica
+- Formato chileno: 1.234,5 (punto miles, coma decimal)
 
-Responde ÚNICAMENTE con el código HTML completo. Sin explicaciones, sin bloques markdown. Empieza directamente con <!DOCTYPE html>.""",
+Responde ÚNICAMENTE con el código HTML. Sin markdown, sin explicaciones. Empieza con <!DOCTYPE html>.""",
 
     "excel": """Genera datos estructurados en formato JSON para crear un archivo Excel.
 
