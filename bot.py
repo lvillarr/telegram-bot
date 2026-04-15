@@ -724,18 +724,12 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption="📄 Informe PDF generado — Arauco Mejora Continua"
             )
         elif artifact_type == "gantt":
-            html = raw.strip()
-            if html.startswith("```"):
-                html = html.split("\n", 1)[-1]
-            if html.endswith("```"):
-                html = html.rsplit("```", 1)[0]
-            html = html.strip()
-            if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
-                await query.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
-                return
-            buf = io.BytesIO(html.encode("utf-8"))
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_gantt(data)
+            titulo = data.get("titulo", "gantt-arauco").lower().replace(" ", "-")[:30]
             await query.message.reply_document(
-                document=buf, filename="gantt-arauco.html",
+                document=buf, filename=f"{titulo}.html",
                 caption="📅 Gantt listo — abre el archivo en tu browser"
             )
     except json.JSONDecodeError:
@@ -1017,62 +1011,200 @@ REGLAS DE CONTENIDO
 - PDF/WORD → extrae secciones, cifras y tablas del texto recibido
 - NUNCA inventes cifras; usa formato numérico chileno: 1.234,5""",
 
-    "gantt": """Eres el Agente DA de Arauco. Tu única tarea es generar un archivo HTML completo y funcional con un diagrama de Gantt interactivo.
+    "gantt": """Eres el Agente DA de Arauco. Extrae las tareas del contexto recibido y devuelve un JSON estructurado.
 
-REGLA ABSOLUTA: responde ÚNICAMENTE con el código HTML. Sin texto previo, sin explicaciones, sin markdown. La primera línea debe ser <!DOCTYPE html>.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-IMPLEMENTACIÓN TÉCNICA — SIN CDN
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-NO uses frappe-gantt, dhtmlx, Google Charts ni ninguna librería CDN.
-Implementa el Gantt tú mismo con SVG + JavaScript vanilla puro.
-Solo se permite: Google Fonts (Lato) como único recurso externo.
+REGLA ABSOLUTA: responde ÚNICAMENTE con JSON válido. Sin texto previo ni posterior. Sin bloques markdown.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ESTRUCTURA REQUERIDA
+ESQUEMA JSON OBLIGATORIO
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-El HTML debe tener estas secciones en orden:
-
-1. HEADER: fondo #696158, texto blanco, título del proyecto centrado, subtítulo con fecha generación.
-
-2. CONTROLES: tres botones "Semana / Mes / Trimestre" para cambiar la escala de tiempo.
-   Badge que muestra el % de avance promedio del proyecto.
-
-3. GANTT SVG: tabla visual con dos columnas —
-   - Columna izquierda (220px fija): nombre de la tarea + responsable (texto)
-   - Columna derecha (scroll horizontal): barras horizontales SVG sobre una línea de tiempo
-   Cada barra tiene: fondo semitransparente (100% duración) + color sólido (% avance).
-   Al hacer clic en una barra se abre el panel de detalle.
-   Línea vertical roja punteada marcando "Hoy" si la fecha actual cae en el rango.
-   Filas alternas en #fff y #EDEAE6.
-
-4. PANEL DETALLE (oculto por defecto): panel lateral que aparece al clic en una barra.
-   Muestra nombre, responsable, área, inicio, fin, % avance, dependencias. Botón X para cerrar.
-
-5. LEYENDA: cuadros de color por área — EO=#BFB800, TD=#EA7600, IA=#2D6A9F, Gestión=#696158, Riesgo=#C00000.
-
-6. FOOTER: "Arauco — Subgerencia de Mejora Continua" centrado, fondo #696158.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-DATOS DE LAS TAREAS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Extrae las tareas del contexto recibido (análisis previo o descripción del usuario).
-Si no hay fechas reales, inferir un proyecto forestal típico a partir del contexto.
-
-Cada tarea debe tener: id (número), nombre, responsable, área (EO/TD/IA/Gestión/Riesgo),
-inicio (YYYY-MM-DD), fin (YYYY-MM-DD), avance (0-100), deps (array de ids).
-Mínimo 6 tareas, máximo 20.
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REQUISITOS JS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-- Las barras SVG se calculan con aritmética de fechas simple: (fecha - fechaMin) / msPerDay * pixelsPorDia.
-- El cambio de vista (Semana/Mes/Trimestre) recalcula pixelsPorDia y redibuja el SVG.
-- Implementa TODO el código JS completo y funcional, sin pseudocódigo ni placeholders.
-- Usa document.createElementNS para crear elementos SVG.
-
-Responde ÚNICAMENTE con el código HTML completo. Sin texto previo ni posterior. Sin markdown. Empieza con <!DOCTYPE html>.""",
+{
+  "titulo": "Nombre del proyecto",
+  "subtitulo": "Descripción breve del alcance",
+  "fecha": "Rango de fechas legible, ej: Enero - Marzo 2025",
+  "tareas": [
+    {
+      "id": "t1",
+      "nombre": "Nombre de la tarea",
+      "area": "EO",
+      "responsable": "Nombre o equipo",
+      "inicio": "YYYY-MM-DD",
+      "fin": "YYYY-MM-DD",
+      "avance": 75,
+      "deps": ""
+    }
+  ]
 }
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+REGLAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- area: EO (Excelencia Operacional) | TD (Transformación Digital) | IA (Inteligencia Artificial) | Gestión | Riesgo
+- avance: número entero 0-100 (% completado)
+- deps: id de tarea predecesora (string "t1") o "" si no tiene dependencia
+- inicio y fin: formato YYYY-MM-DD obligatorio; fin debe ser posterior a inicio
+- Mínimo 5 tareas, máximo 25
+- Si el contexto tiene fechas y tareas reales: úsalas directamente
+- Si no hay fechas: inferir un proyecto realista según el contexto recibido
+- NUNCA inventes cifras de avance si hay datos reales""",
+}
+
+
+def build_gantt(data: dict) -> io.BytesIO:
+    """Genera un HTML con Google Charts Gantt a partir del JSON de tareas."""
+    from datetime import datetime
+
+    AREA_COLORS = {
+        "EO":      "#BFB800",
+        "TD":      "#EA7600",
+        "IA":      "#2D6A9F",
+        "Gestión": "#696158",
+        "Riesgo":  "#C00000",
+    }
+
+    titulo   = data.get("titulo", "Carta Gantt")
+    subtitulo= data.get("subtitulo", "Arauco — Mejora Continua")
+    fecha    = data.get("fecha", "")
+    tareas   = data.get("tareas", [])
+
+    # Construir filas JS para Google Charts DataTable
+    rows_js = []
+    for t in tareas:
+        try:
+            d_ini = datetime.strptime(t["inicio"], "%Y-%m-%d")
+            d_fin = datetime.strptime(t["fin"],    "%Y-%m-%d")
+        except (KeyError, ValueError):
+            continue
+
+        task_id   = str(t.get("id", ""))
+        nombre    = t.get("nombre", "Tarea").replace("'", "\\'")
+        area      = t.get("area", "Gestión")
+        resp      = t.get("responsable", "").replace("'", "\\'")
+        avance    = int(t.get("avance", 0))
+        deps      = str(t.get("deps", "")) or "null"
+        if deps != "null":
+            deps = f"'{deps}'"
+
+        label = f"{nombre} ({resp})" if resp else nombre
+        color = AREA_COLORS.get(area, "#696158")
+
+        rows_js.append(
+            f"  ['{task_id}', '{label}', '{color}', "
+            f"new Date({d_ini.year},{d_ini.month-1},{d_ini.day}), "
+            f"new Date({d_fin.year},{d_fin.month-1},{d_fin.day}), "
+            f"null, {avance}, {deps}]"
+        )
+
+    rows_str = ",\n".join(rows_js)
+
+    # Leyenda
+    leyenda_items = "".join(
+        f'<span class="leg-item"><span class="leg-dot" style="background:{c}"></span>{a}</span>'
+        for a, c in AREA_COLORS.items()
+    )
+
+    # Avance promedio
+    avances = [int(t.get("avance", 0)) for t in tareas if tareas]
+    prom_avance = round(sum(avances) / len(avances)) if avances else 0
+
+    html = f"""<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{titulo}</title>
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<style>
+  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
+  body {{ font-family: Arial, sans-serif; background: #f5f4f2; }}
+  .header {{ background: #696158; color: #fff; padding: 20px 32px; }}
+  .header h1 {{ font-size: 1.4rem; font-weight: 900; letter-spacing: 0.02em; }}
+  .header p  {{ font-size: 0.85rem; opacity: 0.8; margin-top: 4px; }}
+  .controls {{ background: #fff; padding: 14px 32px; border-bottom: 1px solid #EDEAE6;
+               display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }}
+  .badge {{ background: #696158; color: #fff; border-radius: 20px; padding: 4px 14px;
+            font-size: 0.8rem; font-weight: 700; }}
+  .badge-verde {{ background: #BFB800; }}
+  .leyenda {{ display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }}
+  .leg-item {{ display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: #555; }}
+  .leg-dot  {{ width: 12px; height: 12px; border-radius: 3px; display: inline-block; }}
+  #chart_div {{ padding: 16px 32px; background: #fff; margin: 16px; border-radius: 8px;
+                box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow-x: auto; }}
+  .footer {{ background: #696158; color: #fff; text-align: center;
+             padding: 14px; font-size: 0.78rem; opacity: 0.9; margin-top: 24px; }}
+  .error-msg {{ color: #C00000; padding: 20px 32px; font-size: 0.9rem; }}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>{titulo}</h1>
+  <p>{subtitulo} &nbsp;|&nbsp; {fecha}</p>
+</div>
+
+<div class="controls">
+  <span class="badge badge-verde">▶ Avance promedio: {prom_avance}%</span>
+  <div class="leyenda">{leyenda_items}</div>
+</div>
+
+<div id="chart_div">
+  <p style="color:#888; font-size:0.85rem; padding:8px 0">Cargando diagrama...</p>
+</div>
+
+<div class="footer">Arauco — Subgerencia de Mejora Continua &nbsp;|&nbsp; {fecha}</div>
+
+<script type="text/javascript">
+  google.charts.load('current', {{'packages': ['gantt']}});
+  google.charts.setOnLoadCallback(drawChart);
+
+  function drawChart() {{
+    var data = new google.visualization.DataTable();
+    data.addColumn('string', 'ID');
+    data.addColumn('string', 'Tarea');
+    data.addColumn('string', 'Recurso');
+    data.addColumn('date',   'Inicio');
+    data.addColumn('date',   'Fin');
+    data.addColumn('number', 'Duración');
+    data.addColumn('number', 'Avance');
+    data.addColumn('string', 'Dependencias');
+
+    data.addRows([
+{rows_str}
+    ]);
+
+    var options = {{
+      height: Math.max(200, {len(tareas)} * 42 + 60),
+      gantt: {{
+        trackHeight: 36,
+        barHeight:   22,
+        labelStyle:  {{ fontName: 'Arial', fontSize: 12 }},
+        palette: [
+          {{ color: '#BFB800', dark: '#8a8400', light: '#e8e200' }},
+          {{ color: '#EA7600', dark: '#b85c00', light: '#ffa040' }},
+          {{ color: '#2D6A9F', dark: '#1d4a70', light: '#5090cc' }},
+          {{ color: '#696158', dark: '#4a453f', light: '#9e9590' }},
+          {{ color: '#C00000', dark: '#880000', light: '#e04040' }}
+        ],
+        arrow: {{ angle: 100, width: 2, color: '#999', radius: 0 }},
+        criticalPathEnabled: false,
+        innerGridHorizLine: {{ stroke: '#EDEAE6', strokeWidth: 1 }},
+        innerGridTrack:     {{ fill: '#fafafa' }},
+        innerGridDarkTrack: {{ fill: '#EDEAE6' }},
+      }}
+    }};
+
+    var chart = new google.visualization.Gantt(document.getElementById('chart_div'));
+    chart.draw(data, options);
+
+    document.querySelector('#chart_div p').style.display = 'none';
+  }}
+</script>
+</body>
+</html>"""
+
+    buf = io.BytesIO(html.encode("utf-8"))
+    buf.seek(0)
+    return buf
 
 
 def build_pdf(data: dict) -> io.BytesIO:
@@ -1354,12 +1486,12 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
     artifact_model = "claude-sonnet-4-6"
-    artifact_tokens = 16000 if artifact_type in ("html", "gantt") else 4000
+    artifact_tokens = 16000 if artifact_type == "html" else 4000
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
     try:
-        if artifact_type in ("html", "gantt"):
+        if artifact_type == "html":
             html = raw.strip()
             if html.startswith("```"):
                 html = html.split("\n", 1)[-1]
@@ -1370,11 +1502,8 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
             buf = io.BytesIO(html.encode("utf-8"))
-            filenames = {"html": "dashboard-arauco.html", "gantt": "gantt-arauco.html"}
-            captions  = {
-                "html":  "🌲 Dashboard listo — abre el archivo en tu browser",
-                "gantt": "📅 Gantt listo — abre el archivo en tu browser",
-            }
+            filenames = {"html": "dashboard-arauco.html"}
+            captions  = {"html": "🌲 Dashboard listo — abre el archivo en tu browser"}
             await update.message.reply_document(document=buf, filename=filenames[artifact_type],
                                                 caption=captions[artifact_type])
 
@@ -1386,6 +1515,16 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(
                 document=buf, filename=f"{titulo}.pdf",
                 caption="📄 Informe PDF generado — Arauco Mejora Continua"
+            )
+
+        elif artifact_type == "gantt":
+            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
+            data = json.loads(cleaned)
+            buf = build_gantt(data)
+            titulo = data.get("titulo", "gantt-arauco").lower().replace(" ", "-")[:30]
+            await update.message.reply_document(
+                document=buf, filename=f"{titulo}.html",
+                caption="📅 Gantt listo — abre el archivo en tu browser"
             )
 
         elif artifact_type == "excel":
