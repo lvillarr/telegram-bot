@@ -780,53 +780,117 @@ ESTRUCTURA OBLIGATORIA DEL DASHBOARD
    - Total registros, sumas, promedios, porcentajes clave
    - Usa colores: verde-oliva para positivo, naranja para alerta, gris para neutro
 
-3. SECCIÓN DE FILTROS INTERACTIVOS — OBLIGATORIA cuando hay datos cargados:
+3. SECCIÓN DE FILTROS INTERACTIVOS — OBLIGATORIA
    - Un <select> por cada columna categórica relevante (máx. 4 filtros)
-   - Botón "Limpiar filtros"
-   - Los filtros deben actualizar simultáneamente la tabla Y los gráficos
-   - Ejemplo de estructura:
-     <div id="filtros">
-       <select id="f-region" onchange="aplicarFiltros()"><option value="">Todas las regiones</option>...</select>
-       <select id="f-cert" onchange="aplicarFiltros()"><option value="">Todas las certificaciones</option>...</select>
-       <button onclick="limpiarFiltros()">✕ Limpiar</button>
-     </div>
+   - Cada <select> llama a aplicarFiltros() en onchange
+   - Botón "✕ Limpiar filtros" que resetea todos los selects y llama aplicarFiltros()
+   - Contador de registros visibles: <span id="conteo">N registros</span>
 
-4. GRÁFICOS Chart.js — mínimo 2, máximo 4:
-   - Barras horizontales para rankings (top-10 valores)
-   - Dona/torta para distribuciones categóricas (certificaciones, estados, tipos)
-   - Línea para series temporales si hay fechas
-   - Los datos de los gráficos deben venir de `stats.frecuencias` o stats numéricas — NO inventar
+4. GRÁFICOS Chart.js — mínimo 2:
+   - Barras horizontales para rankings (top-10 categorías)
+   - Dona para distribuciones (estados, tipos, categorías binarias)
+   - Cada gráfico tiene un Chart instance en una variable (ej: let chartBarras, chartDona)
+   - Los gráficos SE ACTUALIZAN cuando cambian los filtros (ver JS obligatorio)
 
-5. TABLA FILTRABLE — con los campos más relevantes:
-   - Header fijo con estilo #696158
+5. TABLA FILTRABLE:
+   - Header con fondo #696158 y texto blanco
    - Filas alternas blanco/#DFD1A7
-   - Se actualiza con los filtros de la sección 3
-   - Mostrar máx. 50 filas (paginar si hay más)
-   - Columna de estado con badge de color según valor
+   - Máx. 50 filas visibles
+   - Se regenera completamente al filtrar (innerHTML del tbody)
 
 6. FOOTER — "Arauco — Subgerencia de Mejora Continua | Generado por Agente DA"
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-LÓGICA JS PARA FILTROS — implementa exactamente esto
+JS OBLIGATORIO — copia esta estructura EXACTA y complétala con los datos reales
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-// Datos embebidos desde stats (usa los datos reales del JSON recibido)
-const DATOS = [ /* array de objetos con todas las filas de muestra_top20 */ ];
+// 1. Datos embebidos — un objeto por fila de muestra_top20
+//    Las claves son los nombres de columna exactos del archivo
+const DATOS = [
+  { "COL1": "ValA", "COL2": 123, "COL3": "CatX" },   // ← reemplaza con datos reales
+  // ... más filas
+];
 
+// 2. Columnas que tienen filtro — usa los nombres exactos de columna
+const FILTROS_COLS = ["COL_CATEGORICA_1", "COL_CATEGORICA_2"];  // ← reemplaza
+
+// 3. Referencias a los Chart instances — una por gráfico
+let charts = {};
+
+// 4. Función principal — filtra DATOS y actualiza TODO
 function aplicarFiltros() {
-  const filtros = { /* leer valor de cada <select> */ };
+  // Leer valor actual de cada select
+  const vals = {};
+  FILTROS_COLS.forEach(col => {
+    const el = document.getElementById('f-' + col);
+    if (el) vals[col] = el.value;
+  });
+
+  // Filtrar el dataset
   const filtrados = DATOS.filter(row =>
-    Object.entries(filtros).every(([k, v]) => !v || row[k] === v)
+    FILTROS_COLS.every(col => !vals[col] || String(row[col]) === vals[col])
   );
-  renderTabla(filtrados);
-  actualizarGraficos(filtrados);
+
+  // Actualizar contador
   document.getElementById('conteo').textContent = filtrados.length + ' registros';
+
+  // Actualizar tabla
+  renderTabla(filtrados);
+
+  // Actualizar TODOS los gráficos con los datos filtrados
+  actualizarGraficos(filtrados);
 }
 
+// 5. Renderiza la tabla con las filas filtradas
+function renderTabla(filas) {
+  const tbody = document.getElementById('tabla-body');
+  tbody.innerHTML = filas.slice(0, 50).map((row, i) => {
+    const bg = i % 2 === 0 ? '#fff' : '#DFD1A7';
+    // ← genera aquí los <td> con los campos relevantes
+    return `<tr style="background:${bg}">
+      <td style="padding:8px 12px;border-bottom:1px solid #DFD1A7">${row['COL1'] ?? ''}</td>
+      <td style="padding:8px 12px;border-bottom:1px solid #DFD1A7">${row['COL2'] ?? ''}</td>
+    </tr>`;
+  }).join('');
+}
+
+// 6. Recalcula y actualiza los gráficos con el subconjunto filtrado
+function actualizarGraficos(filas) {
+  // Ejemplo para un gráfico de barras por COL_CATEGORICA_1:
+  const conteo = {};
+  filas.forEach(row => {
+    const v = String(row['COL_CATEGORICA_1'] ?? 'Sin dato');
+    conteo[v] = (conteo[v] || 0) + 1;
+  });
+  const labels = Object.keys(conteo).slice(0, 10);
+  const values = labels.map(l => conteo[l]);
+
+  if (charts.barras) {
+    charts.barras.data.labels = labels;
+    charts.barras.data.datasets[0].data = values;
+    charts.barras.update();
+  }
+  // ← repite para cada chart instance (charts.dona, charts.linea, etc.)
+}
+
+// 7. Limpia todos los filtros y re-aplica
 function limpiarFiltros() {
-  document.querySelectorAll('#filtros select').forEach(s => s.value = '');
+  FILTROS_COLS.forEach(col => {
+    const el = document.getElementById('f-' + col);
+    if (el) el.value = '';
+  });
   aplicarFiltros();
 }
+
+// 8. Inicialización al cargar la página
+window.addEventListener('DOMContentLoaded', () => {
+  // Crear gráficos Chart.js iniciales con datos completos
+  charts.barras = new Chart(document.getElementById('canvas-barras'), { /* config */ });
+  // charts.dona  = new Chart(document.getElementById('canvas-dona'),   { /* config */ });
+
+  // Render inicial
+  aplicarFiltros();
+});
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 DEPENDENCIAS CDN
