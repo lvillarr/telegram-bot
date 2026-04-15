@@ -1103,9 +1103,21 @@ def build_gantt(data: dict) -> io.BytesIO:
         for a, c in AREA_COLORS.items()
     )
 
-    # Avance promedio
-    avances = [int(t.get("avance", 0)) for t in tareas if tareas]
+    # Avance promedio — robusto ante valores string/float/None
+    avances = []
+    for t in tareas:
+        try:
+            avances.append(int(float(t.get("avance", 0) or 0)))
+        except (TypeError, ValueError):
+            avances.append(0)
     prom_avance = round(sum(avances) / len(avances)) if avances else 0
+
+    # Longitud máxima del label para calcular labelMaxWidth
+    max_label_len = max(
+        (len(f"{t.get('nombre','')} ({t.get('responsable','')})") for t in tareas),
+        default=20
+    )
+    label_col_px = min(max(max_label_len * 7, 220), 380)
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
@@ -1128,11 +1140,11 @@ def build_gantt(data: dict) -> io.BytesIO:
   .leyenda {{ display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }}
   .leg-item {{ display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: #555; }}
   .leg-dot  {{ width: 12px; height: 12px; border-radius: 3px; display: inline-block; }}
-  #chart_div {{ padding: 16px 32px; background: #fff; margin: 16px; border-radius: 8px;
-                box-shadow: 0 1px 4px rgba(0,0,0,0.08); overflow-x: auto; }}
+  #chart_div {{ padding: 8px 16px 16px; background: #fff; margin: 16px;
+                border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+                overflow-x: auto; }}
   .footer {{ background: #696158; color: #fff; text-align: center;
              padding: 14px; font-size: 0.78rem; opacity: 0.9; margin-top: 24px; }}
-  .error-msg {{ color: #C00000; padding: 20px 32px; font-size: 0.9rem; }}
 </style>
 </head>
 <body>
@@ -1143,13 +1155,11 @@ def build_gantt(data: dict) -> io.BytesIO:
 </div>
 
 <div class="controls">
-  <span class="badge badge-verde">▶ Avance promedio: {prom_avance}%</span>
+  <span class="badge badge-verde" id="badge-avance">▶ Avance promedio: {prom_avance}%</span>
   <div class="leyenda">{leyenda_items}</div>
 </div>
 
-<div id="chart_div">
-  <p style="color:#888; font-size:0.85rem; padding:8px 0">Cargando diagrama...</p>
-</div>
+<div id="chart_div"></div>
 
 <div class="footer">Arauco — Subgerencia de Mejora Continua &nbsp;|&nbsp; {fecha}</div>
 
@@ -1172,20 +1182,30 @@ def build_gantt(data: dict) -> io.BytesIO:
 {rows_str}
     ]);
 
+    // Recalcular avance promedio con datos reales del DataTable
+    var total = 0;
+    for (var i = 0; i < data.getNumberOfRows(); i++) {{
+      total += (data.getValue(i, 6) || 0);
+    }}
+    var prom = Math.round(total / data.getNumberOfRows());
+    document.getElementById('badge-avance').textContent = '▶ Avance promedio: ' + prom + '%';
+
     var options = {{
-      height: Math.max(200, {len(tareas)} * 42 + 60),
+      width:  '100%',
+      height: Math.max(200, data.getNumberOfRows() * 44 + 60),
       gantt: {{
-        trackHeight: 36,
-        barHeight:   22,
-        labelStyle:  {{ fontName: 'Arial', fontSize: 12 }},
+        trackHeight:   38,
+        barHeight:     24,
+        labelMaxWidth: {label_col_px},
+        labelStyle:    {{ fontName: 'Arial', fontSize: 12, color: '#333' }},
         palette: [
-          {{ color: '#BFB800', dark: '#8a8400', light: '#e8e200' }},
+          {{ color: '#BFB800', dark: '#8a8400', light: '#ddd700' }},
           {{ color: '#EA7600', dark: '#b85c00', light: '#ffa040' }},
           {{ color: '#2D6A9F', dark: '#1d4a70', light: '#5090cc' }},
           {{ color: '#696158', dark: '#4a453f', light: '#9e9590' }},
           {{ color: '#C00000', dark: '#880000', light: '#e04040' }}
         ],
-        arrow: {{ angle: 100, width: 2, color: '#999', radius: 0 }},
+        arrow:              {{ angle: 100, width: 2, color: '#aaa', radius: 0 }},
         criticalPathEnabled: false,
         innerGridHorizLine: {{ stroke: '#EDEAE6', strokeWidth: 1 }},
         innerGridTrack:     {{ fill: '#fafafa' }},
@@ -1195,8 +1215,6 @@ def build_gantt(data: dict) -> io.BytesIO:
 
     var chart = new google.visualization.Gantt(document.getElementById('chart_div'));
     chart.draw(data, options);
-
-    document.querySelector('#chart_div p').style.display = 'none';
   }}
 </script>
 </body>
