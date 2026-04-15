@@ -536,6 +536,57 @@ async def modelo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+CODE_BLOCK_RE = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
+EXT_MAP = {"python": "py", "py": "py", "sql": "sql", "bash": "sh", "sh": "sh", "r": "r", "javascript": "js", "js": "js"}
+
+async def send_reply(update: Update, text: str, reply_markup=None):
+    """
+    Envía la respuesta de Claude a Telegram.
+    Si la respuesta contiene un bloque de código largo (>10 líneas), lo extrae
+    y lo envía como archivo adjunto en lugar de mostrarlo inline.
+    """
+    # Detectar bloques de código en la respuesta
+    code_blocks = CODE_BLOCK_RE.findall(text)
+    large_blocks = [(lang, code) for lang, code in code_blocks if code.count('\n') >= 10]
+
+    if not large_blocks:
+        # Sin código largo — envío normal
+        try:
+            await update.message.reply_text(
+                fmt(text) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception:
+            await update.message.reply_text(
+                text + "\n\n🎨 ¿Generar un artefacto visual con esto?",
+                reply_markup=reply_markup
+            )
+        return
+
+    # Hay bloques de código largos — separar texto del código
+    clean_text = CODE_BLOCK_RE.sub("", text).strip()
+
+    # Enviar primero el texto explicativo (si hay)
+    if clean_text:
+        try:
+            await update.message.reply_text(
+                fmt(clean_text) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
+                reply_markup=reply_markup,
+                parse_mode="HTML"
+            )
+        except Exception:
+            await update.message.reply_text(clean_text, reply_markup=reply_markup)
+
+    # Enviar cada bloque de código como archivo
+    for i, (lang, code) in enumerate(large_blocks, 1):
+        ext = EXT_MAP.get(lang.lower(), "txt")
+        filename = f"script_{i}.{ext}" if len(large_blocks) > 1 else f"script.{ext}"
+        buf = io.BytesIO(code.strip().encode("utf-8"))
+        caption = f"📎 {filename} — copia y ejecuta en tu entorno"
+        await update.message.reply_document(document=buf, filename=filename, caption=caption)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
     try:
@@ -545,17 +596,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = claude_response(system, user_msg, model=get_model(context), history=history)
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
-        try:
-            await update.message.reply_text(
-                fmt(reply) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
-                reply_markup=ARTIFACT_KEYBOARD,
-                parse_mode="HTML"
-            )
-        except Exception:
-            await update.message.reply_text(
-                reply + "\n\n🎨 ¿Generar un artefacto visual con esto?",
-                reply_markup=ARTIFACT_KEYBOARD
-            )
+        await send_reply(update, reply, reply_markup=ARTIFACT_KEYBOARD)
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error al procesar: {str(e)[:200]}")
 
@@ -583,17 +624,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     push_history(context, caption, analysis)
     context.user_data["last_analysis"] = analysis
 
-    try:
-        await update.message.reply_text(
-            fmt(analysis) + "\n\n🎨 <i>¿Generar un artefacto visual con este análisis?</i>",
-            reply_markup=ARTIFACT_KEYBOARD,
-            parse_mode="HTML"
-        )
-    except Exception:
-        await update.message.reply_text(
-            analysis + "\n\n🎨 ¿Generar un artefacto visual con este análisis?",
-            reply_markup=ARTIFACT_KEYBOARD
-        )
+    await send_reply(update, analysis, reply_markup=ARTIFACT_KEYBOARD)
 
 
 async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1287,18 +1318,15 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Guarda contenido completo para indexar si el usuario lo solicita
     context.user_data["pending_index"] = {"filename": doc.file_name, "content": content}
 
+    header = f"📄 <b>{doc.file_name}</b>\n\n"
     try:
         await update.message.reply_text(
-            f"📄 <b>{doc.file_name}</b>\n\n{fmt(analysis)}\n\n"
-            "🎨 <i>¿Qué deseas hacer con este documento?</i>",
+            header + fmt(analysis) + "\n\n🎨 <i>¿Qué deseas hacer con este documento?</i>",
             reply_markup=DOC_KEYBOARD,
             parse_mode="HTML"
         )
     except Exception:
-        await update.message.reply_text(
-            f"📄 {doc.file_name}\n\n{analysis}\n\n¿Qué deseas hacer?",
-            reply_markup=DOC_KEYBOARD
-        )
+        await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=DOC_KEYBOARD)
 
 
 async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
