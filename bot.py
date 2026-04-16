@@ -1052,7 +1052,7 @@ Esquema:
 REGLAS:
 - Tono profesional, conciso, en español
 - Si el usuario indica destinatario, úsalo; si no, deja para="destinatario@arauco.com" como placeholder
-- El cuerpo debe incluir saludo, desarrollo y cierre con firma "Subgerencia de Mejora Continua — Arauco"
+- El cuerpo debe incluir saludo, desarrollo y cierre. La firma final siempre debe ser exactamente: "Saludos,\nLuciano"
 - Si hay datos del análisis previo, resúmelos en el cuerpo de forma ejecutiva
 - Nunca inventes cifras; usa solo las del contexto recibido""",
 
