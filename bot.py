@@ -568,6 +568,7 @@ ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
 ], [
     InlineKeyboardButton("📅 Gantt", callback_data="art_gantt"),
     InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
+    InlineKeyboardButton("📧 Email", callback_data="art_email"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
@@ -577,6 +578,8 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
 ], [
     InlineKeyboardButton("📅 Gantt",          callback_data="art_gantt"),
     InlineKeyboardButton("🌐 HTML",           callback_data="art_html"),
+    InlineKeyboardButton("📧 Email",          callback_data="art_email"),
+], [
     InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
 ]])
 
@@ -789,7 +792,7 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     raw = claude_response(prompt, description,
@@ -845,6 +848,18 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 document=buf, filename=f"{titulo}.pptx",
                 caption="🖥️ Presentación PowerPoint generada — Arauco Mejora Continua"
             )
+        elif artifact_type == "email":
+            data = extract_json(raw)
+            context.user_data["pending_email"] = data
+            preview = (
+                f"📧 <b>Borrador de correo</b>\n\n"
+                f"<b>Para:</b> {_html.escape(data.get('para',''))}\n"
+                + (f"<b>CC:</b> {_html.escape(data.get('cc',''))}\n" if data.get('cc') else "")
+                + f"<b>Asunto:</b> {_html.escape(data.get('asunto',''))}\n\n"
+                f"{_html.escape(data.get('cuerpo',''))}"
+            )
+            await query.message.reply_text(preview, parse_mode="HTML",
+                                           reply_markup=EMAIL_CONFIRM_KEYBOARD)
     except (json.JSONDecodeError, ValueError) as e:
         await query.message.reply_text(
             f"⚠️ Error al parsear la respuesta del modelo: {str(e)[:120]}\n"
@@ -887,13 +902,15 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo y lo envía aquí
 • `pdf`   — Informe ejecutivo en PDF
 • `gantt` — Carta Gantt del proyecto
 • `pptx`  — Presentación PowerPoint
+• `email` — Borrador de correo Outlook
 
 *Uso:*
 `/artifact html dashboard OEE semanal línea 3`
 `/artifact excel tabla KPIs cosecha por turno`
 `/artifact pdf informe pérdidas semana 23`
 `/artifact gantt proyecto mejora bomba 42`
-`/artifact pptx presentación resultados Q2 cosecha`"""
+`/artifact pptx presentación resultados Q2 cosecha`
+`/artifact email resumen análisis para juan@arauco.com`"""
 
 ARTIFACT_PROMPTS = {
     "html": """Eres el Agente DA de Arauco — Subgerencia de Mejora Continua.
@@ -1019,6 +1036,25 @@ REGLAS
 - Si el contexto tiene fechas y tareas reales: úsalas directamente
 - Si no hay fechas: inferir un proyecto realista según el contexto recibido
 - NUNCA inventes cifras de avance si hay datos reales""",
+
+    "email": """Eres el Agente DA de Arauco. Redacta un correo profesional en formato JSON.
+
+REGLA ABSOLUTA: responde ÚNICAMENTE con JSON válido. Sin texto previo ni posterior.
+
+Esquema:
+{
+  "para": "destinatario@arauco.com",
+  "cc": "",
+  "asunto": "Asunto del correo",
+  "cuerpo": "Cuerpo del correo en texto plano. Puede tener saltos de línea con \\n."
+}
+
+REGLAS:
+- Tono profesional, conciso, en español
+- Si el usuario indica destinatario, úsalo; si no, deja para="destinatario@arauco.com" como placeholder
+- El cuerpo debe incluir saludo, desarrollo y cierre con firma "Subgerencia de Mejora Continua — Arauco"
+- Si hay datos del análisis previo, resúmelos en el cuerpo de forma ejecutiva
+- Nunca inventes cifras; usa solo las del contexto recibido""",
 
     "pptx": """Eres el Agente DA (Analista de Datos) de Arauco — Subgerencia de Mejora Continua.
 Genera una presentación PowerPoint estructurada, profesional y lista para usar.
@@ -1671,6 +1707,40 @@ def build_pptx(data: dict) -> io.BytesIO:
     return buf
 
 
+def send_email_outlook(data: dict) -> None:
+    """Envía un correo via SMTP de Outlook (smtp.office365.com:587)."""
+    import smtplib
+    from email.mime.multipart import MIMEMultipart
+    from email.mime.text import MIMEText
+
+    sender   = os.environ.get("OUTLOOK_EMAIL", "")
+    password = os.environ.get("OUTLOOK_PASSWORD", "")
+    if not sender or not password:
+        raise ValueError("Faltan variables de entorno OUTLOOK_EMAIL y/o OUTLOOK_PASSWORD.")
+
+    msg = MIMEMultipart("alternative")
+    msg["From"]    = sender
+    msg["To"]      = data["para"]
+    msg["Subject"] = data["asunto"]
+    if data.get("cc"):
+        msg["Cc"] = data["cc"]
+
+    msg.attach(MIMEText(data["cuerpo"], "plain", "utf-8"))
+
+    recipients = [data["para"]] + ([data["cc"]] if data.get("cc") else [])
+    with smtplib.SMTP("smtp.office365.com", 587) as server:
+        server.ehlo()
+        server.starttls()
+        server.login(sender, password)
+        server.sendmail(sender, recipients, msg.as_string())
+
+
+EMAIL_CONFIRM_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("✅ Enviar",   callback_data="email_confirm"),
+    InlineKeyboardButton("❌ Cancelar", callback_data="email_cancel"),
+]])
+
+
 async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(ARTIFACT_HELP, parse_mode="Markdown")
@@ -1721,7 +1791,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     raw = claude_response(prompt, description,
@@ -1779,6 +1849,19 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 document=buf, filename=f"{titulo}.pptx",
                 caption="🖥️ Presentación PowerPoint generada — Arauco Mejora Continua"
             )
+
+        elif artifact_type == "email":
+            data = extract_json(raw)
+            context.user_data["pending_email"] = data
+            preview = (
+                f"📧 <b>Borrador de correo</b>\n\n"
+                f"<b>Para:</b> {_html.escape(data.get('para',''))}\n"
+                + (f"<b>CC:</b> {_html.escape(data.get('cc',''))}\n" if data.get('cc') else "")
+                + f"<b>Asunto:</b> {_html.escape(data.get('asunto',''))}\n\n"
+                f"{_html.escape(data.get('cuerpo',''))}"
+            )
+            await update.message.reply_text(preview, parse_mode="HTML",
+                                            reply_markup=EMAIL_CONFIRM_KEYBOARD)
 
     except (json.JSONDecodeError, ValueError) as e:
         await update.message.reply_text(
@@ -2134,6 +2217,34 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=DOC_KEYBOARD)
 
 
+async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_reply_markup(reply_markup=None)
+
+    if query.data == "email_cancel":
+        await query.message.reply_text("❌ Envío cancelado.")
+        context.user_data.pop("pending_email", None)
+        return
+
+    data = context.user_data.get("pending_email")
+    if not data:
+        await query.message.reply_text("⚠️ No hay correo pendiente.")
+        return
+
+    await query.message.reply_text("⏳ Enviando correo...")
+    try:
+        send_email_outlook(data)
+        context.user_data.pop("pending_email", None)
+        await query.message.reply_text(
+            f"✅ Correo enviado a <b>{_html.escape(data['para'])}</b>\n"
+            f"<b>Asunto:</b> {_html.escape(data['asunto'])}",
+            parse_mode="HTML"
+        )
+    except Exception as e:
+        await query.message.reply_text(f"⚠️ Error al enviar: {str(e)[:200]}")
+
+
 async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Indexa el último documento analizado en ChromaDB."""
     query = update.callback_query
@@ -2304,7 +2415,8 @@ app.add_handler(CommandHandler("indexar",    indexar_handler))
 app.add_handler(CommandHandler("documentos", documentos_handler))
 app.add_handler(CommandHandler("buscar",     buscar_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
-app.add_handler(CallbackQueryHandler(rag_index_callback, pattern="^rag_index$"))
+app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
+app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel)$"))
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
