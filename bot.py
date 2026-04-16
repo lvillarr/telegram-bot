@@ -563,20 +563,20 @@ def push_history(context, user_msg: str, assistant_reply: str):
 
 ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
-    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
+    InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
     InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
 ], [
     InlineKeyboardButton("📅 Gantt", callback_data="art_gantt"),
-    InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
+    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
-    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
+    InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
     InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
 ], [
     InlineKeyboardButton("📅 Gantt",          callback_data="art_gantt"),
-    InlineKeyboardButton("🖥️ PPT",            callback_data="art_pptx"),
+    InlineKeyboardButton("🌐 HTML",           callback_data="art_html"),
     InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
 ]])
 
