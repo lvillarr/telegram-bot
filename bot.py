@@ -3,7 +3,9 @@ import io
 import re
 import json
 import time
+import uuid
 import base64
+import asyncio
 import tempfile
 import anthropic
 import groq as groq_lib
@@ -13,11 +15,21 @@ import pdfplumber
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from collections import OrderedDict
+from aiohttp import web as aiohttp_web
 from docx import Document as DocxDocument
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import html as _html
 from telegram.ext import ContextTypes
+
+# ── Servidor HTTP para servir archivos generados (Gantt, etc.) ──────────────
+# Telegram abre URLs en el browser externo del sistema (Chrome/Safari)
+# en vez del viewer embebido que no soporta JS/CDN.
+_HTML_STORE: OrderedDict = OrderedDict()   # uuid → html_string (máx 100 entradas)
+_MAX_STORE   = 100
+PUBLIC_BASE  = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+PUBLIC_BASE  = f"https://{PUBLIC_BASE}" if PUBLIC_BASE else f"http://localhost:{os.environ.get('PORT', 8080)}"
 
 
 def fmt(text: str) -> str:
@@ -745,11 +757,12 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif artifact_type == "gantt":
             cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             data = json.loads(cleaned)
-            buf = build_gantt(data)
-            titulo = data.get("titulo", "gantt-arauco").lower().replace(" ", "-")[:30]
-            await query.message.reply_document(
-                document=buf, filename=f"{titulo}.html",
-                caption="📅 Gantt listo — abre el archivo en tu browser"
+            url = build_gantt(data)
+            titulo = data.get("titulo", "Carta Gantt")
+            await query.message.reply_text(
+                f"📅 <b>{titulo}</b>\n\n"
+                f'Toca el enlace para abrir en tu browser:\n{url}',
+                parse_mode="HTML"
             )
     except json.JSONDecodeError:
         await query.message.reply_text("⚠️ Error al procesar. Intenta de nuevo.")
@@ -1069,6 +1082,27 @@ REGLAS
 }
 
 
+def store_html(html: str) -> str:
+    """Guarda HTML en memoria y retorna la URL pública."""
+    gid = uuid.uuid4().hex
+    _HTML_STORE[gid] = html
+    if len(_HTML_STORE) > _MAX_STORE:
+        _HTML_STORE.popitem(last=False)   # elimina el más antiguo
+    return f"{PUBLIC_BASE}/g/{gid}"
+
+
+async def http_serve_html(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    gid = request.match_info.get("gid", "")
+    html = _HTML_STORE.get(gid)
+    if not html:
+        return aiohttp_web.Response(status=404, text="No encontrado o expirado.")
+    return aiohttp_web.Response(content_type="text/html", body=html.encode("utf-8"))
+
+
+async def http_health(request: aiohttp_web.Request) -> aiohttp_web.Response:
+    return aiohttp_web.Response(text="ok")
+
+
 def build_gantt(data: dict) -> io.BytesIO:
     """
     Genera un Gantt HTML/CSS puro — sin JavaScript ni CDN externos.
@@ -1267,9 +1301,8 @@ body{{font-family:Arial,Helvetica,sans-serif;background:#f0ede9;color:#333}}
 </body>
 </html>"""
 
-    buf = io.BytesIO(html.encode("utf-8"))
-    buf.seek(0)
-    return buf
+    url = store_html(html)
+    return url
 
 
 def build_pdf(data: dict) -> io.BytesIO:
@@ -1585,11 +1618,12 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif artifact_type == "gantt":
             cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
             data = json.loads(cleaned)
-            buf = build_gantt(data)
-            titulo = data.get("titulo", "gantt-arauco").lower().replace(" ", "-")[:30]
-            await update.message.reply_document(
-                document=buf, filename=f"{titulo}.html",
-                caption="📅 Gantt listo — abre el archivo en tu browser"
+            url = build_gantt(data)
+            titulo = data.get("titulo", "Carta Gantt")
+            await update.message.reply_text(
+                f"📅 <b>{titulo}</b>\n\n"
+                f'Toca el enlace para abrir en tu browser:\n{url}',
+                parse_mode="HTML"
             )
 
         elif artifact_type == "excel":
@@ -2088,4 +2122,28 @@ app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
-app.run_polling(drop_pending_updates=True)
+
+async def main():
+    """Corre el bot de Telegram y el servidor HTTP en paralelo."""
+    port = int(os.environ.get("PORT", 8080))
+
+    # ── Servidor aiohttp para servir HTMLs generados ────────────────────────
+    web_app = aiohttp_web.Application()
+    web_app.router.add_get("/g/{gid}", http_serve_html)
+    web_app.router.add_get("/health",  http_health)
+    runner = aiohttp_web.AppRunner(web_app)
+    await runner.setup()
+    await aiohttp_web.TCPSite(runner, "0.0.0.0", port).start()
+    print(f"[HTTP] servidor en 0.0.0.0:{port}  |  base URL: {PUBLIC_BASE}")
+
+    # ── Bot de Telegram (polling) ────────────────────────────────────────────
+    async with app:
+        await app.start()
+        await app.updater.start_polling(drop_pending_updates=True)
+        print("[BOT] polling iniciado")
+        # Espera indefinida hasta señal de cierre
+        stop = asyncio.Event()
+        await stop.wait()
+
+
+asyncio.run(main())

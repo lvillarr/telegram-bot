@@ -8,3 +8,4 @@ matplotlib
 pdfplumber
 python-docx
 reportlab
+aiohttp
