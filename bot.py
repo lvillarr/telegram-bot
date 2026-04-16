@@ -12,9 +12,6 @@ import groq as groq_lib
 import rag
 import openpyxl
 import pdfplumber
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 from collections import OrderedDict
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from docx import Document as DocxDocument
@@ -525,20 +522,18 @@ def push_history(context, user_msg: str, assistant_reply: str):
 
 
 ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("📊 Excel",   callback_data="art_excel"),
-    InlineKeyboardButton("📈 Gráfico", callback_data="art_chart"),
-    InlineKeyboardButton("🌐 HTML",    callback_data="art_html"),
+    InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
+    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
+    InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
 ], [
-    InlineKeyboardButton("📄 PDF",     callback_data="art_pdf"),
-    InlineKeyboardButton("📅 Gantt",   callback_data="art_gantt"),
+    InlineKeyboardButton("📅 Gantt", callback_data="art_gantt"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("📊 Excel",          callback_data="art_excel"),
-    InlineKeyboardButton("📈 Gráfico",        callback_data="art_chart"),
-    InlineKeyboardButton("🌐 HTML",           callback_data="art_html"),
+    InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
+    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
+    InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
 ], [
-    InlineKeyboardButton("📄 PDF",            callback_data="art_pdf"),
     InlineKeyboardButton("📅 Gantt",          callback_data="art_gantt"),
     InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
 ]])
@@ -752,7 +747,7 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "chart": 2000}
+    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
@@ -781,13 +776,6 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_document(
                 document=buf, filename=filename,
                 caption="📊 Excel generado con datos del análisis forestal"
-            )
-        elif artifact_type == "chart":
-            data = extract_json(raw)
-            buf = build_chart(data)
-            await query.message.reply_photo(
-                photo=buf,
-                caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua"
             )
         elif artifact_type == "pdf":
             data = extract_json(raw)
@@ -843,14 +831,16 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo visual y lo envía aquí
 
 *Tipos disponibles:*
-• `html` — Dashboard interactivo con Chart.js
+• `html` — Dashboard interactivo
 • `excel` — Tabla de datos en formato Excel
-• `chart` — Gráfico PNG (barras, línea o torta)
+• `pdf` — Informe ejecutivo en PDF
+• `gantt` — Carta Gantt del proyecto
 
 *Uso:*
 `/artifact html dashboard OEE semanal línea 3`
 `/artifact excel tabla KPIs cosecha por turno`
-`/artifact chart barras pérdidas por equipo semana 23`"""
+`/artifact pdf informe pérdidas semana 23`
+`/artifact gantt proyecto mejora bomba 42`"""
 
 ARTIFACT_PROMPTS = {
     "html": """Eres el Agente DA (Analista de Datos) de Arauco — Subgerencia de Mejora Continua.
@@ -1021,26 +1011,6 @@ El JSON debe tener exactamente esta estructura:
 
 Los datos deben ser realistas para el contexto forestal de Arauco pedido (KPIs, mérdidas, productividad, equipos, etc.).
 Incluye entre 5 y 15 filas de datos representativos.
-Responde ÚNICAMENTE con el JSON válido, sin explicaciones ni bloques de código markdown.""",
-
-    "chart": """Genera datos para un gráfico en formato JSON.
-
-El JSON debe tener exactamente esta estructura:
-{
-  "tipo": "bar" | "line" | "pie",
-  "titulo": "Título del gráfico",
-  "etiquetas": ["Label1", "Label2", ...],
-  "datasets": [
-    {
-      "nombre": "Serie 1",
-      "valores": [10, 20, 30, ...]
-    }
-  ],
-  "unidad": "unidad del eje Y (ej: horas, m³, %)"
-}
-
-Los datos deben ser realistas para el contexto forestal de Arauco pedido.
-Incluye entre 5 y 12 puntos de datos.
 Responde ÚNICAMENTE con el JSON válido, sin explicaciones ni bloques de código markdown.""",
 
     "pdf": """Eres el Agente DA de Arauco. Genera un informe ejecutivo en formato JSON estructurado.
@@ -1545,49 +1515,6 @@ def build_excel(data: dict) -> io.BytesIO:
     return buf
 
 
-def build_chart(data: dict) -> io.BytesIO:
-    """Crea un gráfico PNG a partir del JSON generado por Claude."""
-    fig, ax = plt.subplots(figsize=(10, 5))
-    colores = ["#2d6a4f", "#40916c", "#74c69d", "#b7e4c7", "#1b4332", "#52b788"]
-    tipo = data.get("tipo", "bar")
-    etiquetas = data["etiquetas"]
-    datasets = data["datasets"]
-    unidad = data.get("unidad", "")
-
-    if tipo == "pie" and datasets:
-        ax.pie(datasets[0]["valores"], labels=etiquetas, colors=colores,
-               autopct="%1.1f%%", startangle=90)
-    elif tipo == "line":
-        for i, ds in enumerate(datasets):
-            ax.plot(etiquetas, ds["valores"], marker="o",
-                    color=colores[i % len(colores)], label=ds["nombre"], linewidth=2)
-        ax.set_xlabel("")
-        ax.set_ylabel(unidad)
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-    else:  # bar
-        x = range(len(etiquetas))
-        ancho = 0.8 / max(len(datasets), 1)
-        for i, ds in enumerate(datasets):
-            offset = (i - len(datasets) / 2 + 0.5) * ancho
-            bars = ax.bar([xi + offset for xi in x], ds["valores"],
-                          ancho, label=ds["nombre"], color=colores[i % len(colores)])
-            ax.bar_label(bars, fmt="%.1f", padding=2, fontsize=8)
-        ax.set_xticks(list(x))
-        ax.set_xticklabels(etiquetas, rotation=15, ha="right")
-        ax.set_ylabel(unidad)
-        ax.legend()
-        ax.grid(True, axis="y", alpha=0.3)
-
-    ax.set_title(data.get("titulo", ""), fontsize=13, fontweight="bold", pad=12)
-    fig.tight_layout()
-
-    buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150, bbox_inches="tight")
-    plt.close(fig)
-    buf.seek(0)
-    return buf
-
 
 async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
@@ -1599,7 +1526,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if artifact_type not in ARTIFACT_PROMPTS:
         await update.message.reply_text(
-            f"Tipo `{artifact_type}` no reconocido. Usa: `html`, `excel`, `chart`, `pdf` o `gantt`.",
+            f"Tipo `{artifact_type}` no reconocido. Usa: `html`, `excel`, `pdf` o `gantt`.",
             parse_mode="Markdown"
         )
         return
@@ -1639,7 +1566,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "chart": 2000}
+    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
@@ -1688,12 +1615,6 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_document(document=buf, filename=filename,
                                                 caption="📊 Excel generado con datos del contexto forestal")
 
-        elif artifact_type == "chart":
-            data = extract_json(raw)
-            buf = build_chart(data)
-            await update.message.reply_photo(photo=buf,
-                                             caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua")
-
     except (json.JSONDecodeError, ValueError) as e:
         await update.message.reply_text(
             f"⚠️ Error al parsear respuesta del modelo: {str(e)[:120]}\n"
@@ -1703,7 +1624,58 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"⚠️ Error generando el artefacto: {str(e)[:200]}")
 
 
-SUPPORTED_DOCS = {".pdf", ".docx", ".xlsx"}
+SUPPORTED_DOCS = {".pdf", ".docx", ".xlsx", ".pptx"}
+
+def extract_pptx(data: bytes) -> str:
+    """Extrae texto, tablas e imágenes de un PowerPoint."""
+    from pptx import Presentation
+    from pptx.util import Pt
+
+    prs   = Presentation(io.BytesIO(data))
+    parts = []
+    total = len(prs.slides)
+    parts.append(f"--- DOCUMENTO POWERPOINT: {total} diapositivas en total ---")
+
+    headings = []
+    for i, slide in enumerate(prs.slides, 1):
+        slide_parts = []
+        title_text  = ""
+
+        # Layout / título de la diapositiva
+        if slide.shapes.title and slide.shapes.title.text.strip():
+            title_text = slide.shapes.title.text.strip()
+            headings.append(title_text)
+            slide_parts.append(f"## {title_text}")
+
+        # Recorrer todas las formas
+        for shape in slide.shapes:
+            # Texto (excluyendo título ya procesado)
+            if shape.has_text_frame and shape != slide.shapes.title:
+                for para in shape.text_frame.paragraphs:
+                    txt = para.text.strip()
+                    if txt:
+                        slide_parts.append(txt)
+
+            # Tablas
+            if shape.has_table:
+                slide_parts.append(f"[Tabla diapositiva {i}]")
+                for row in shape.table.rows:
+                    slide_parts.append(" | ".join(
+                        cell.text.strip() for cell in row.cells
+                    ))
+
+        if slide_parts:
+            parts.append(f"\n[Diapositiva {i}/{total}]")
+            parts.extend(slide_parts)
+
+    if headings:
+        parts.insert(1, "--- SECCIONES: " + " | ".join(headings[:20]) + " ---")
+
+    full = "\n".join(parts)
+    parts.insert(1 if not headings else 2,
+                 f"--- Total caracteres extraídos: {len(full)} ---")
+    return "\n".join(parts)
+
 
 def extract_pdf(data: bytes) -> str:
     """Extrae texto de un PDF con metadata de estructura."""
@@ -1951,6 +1923,10 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content = extract_docx(file_bytes)
             structured_data = {}
             tipo = "Word"
+        elif ext == ".pptx":
+            content = extract_pptx(file_bytes)
+            structured_data = {}
+            tipo = "PowerPoint"
         else:
             content, structured_data = extract_xlsx(file_bytes)
             tipo = "Excel"
