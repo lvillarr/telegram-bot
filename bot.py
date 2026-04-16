@@ -28,6 +28,44 @@ PUBLIC_BASE = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
 PUBLIC_BASE = f"https://{PUBLIC_BASE}" if PUBLIC_BASE else f"http://localhost:{_HTTP_PORT}"
 
 
+_ARAUCO_CSS = """
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Lato',-apple-system,sans-serif;letter-spacing:-.3px;background:#f5f5f5;color:#333}
+.dashboard-header{background:#696158;color:#fff;padding:24px 32px;display:flex;align-items:center;justify-content:space-between}
+.dashboard-title{font-size:1.4rem;font-weight:700}
+.dashboard-subtitle{font-size:.85rem;color:rgba(255,255,255,.7);font-weight:300}
+.dashboard{max-width:1200px;margin:0 auto;padding:24px}
+.grid{display:grid;gap:16px}
+.grid-2{grid-template-columns:repeat(2,1fr)}
+.grid-3{grid-template-columns:repeat(3,1fr)}
+.grid-4{grid-template-columns:repeat(4,1fr)}
+.card{background:#fff;border-radius:10px;padding:20px;box-shadow:0 2px 8px rgba(0,0,0,.06);border:1px solid #eee}
+.kpi-value{font-size:2rem;font-weight:900;color:#696158}
+.kpi-label{font-size:.75rem;color:#999;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.kpi-change{font-size:.85rem;margin-top:6px;font-weight:700}
+.kpi-change.positive{color:#BFB800}
+.kpi-change.negative{color:#C00000}
+.kpi-change.neutral{color:#999}
+.section-title{font-size:1rem;font-weight:700;color:#696158;margin:24px 0 12px;border-left:4px solid #BFB800;padding-left:10px}
+.filtros-bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;background:#fff;padding:14px 20px;border-radius:10px;box-shadow:0 2px 8px rgba(0,0,0,.06);margin-bottom:16px}
+.filtros-bar select{padding:7px 12px;border:1px solid #DFD1A7;border-radius:6px;font-family:'Lato',sans-serif;font-size:.85rem;color:#696158;background:#fafafa;cursor:pointer}
+.filtros-bar select:focus{outline:none;border-color:#696158}
+.btn-limpiar{padding:7px 14px;background:#EA7600;color:#fff;border:none;border-radius:6px;font-size:.85rem;cursor:pointer;font-weight:700}
+.btn-limpiar:hover{background:#c96300}
+.conteo-badge{font-size:.8rem;color:#999;margin-left:auto}
+table{width:100%;border-collapse:collapse;font-size:.85rem}
+thead tr{background:#696158;color:#fff}
+th{padding:10px 12px;text-align:left;font-weight:700;text-transform:uppercase;font-size:.75rem;letter-spacing:.04em}
+td{padding:8px 12px;border-bottom:1px solid #eee}
+tbody tr:nth-child(even){background:#EDEAE6}
+.badge{display:inline-block;padding:2px 8px;border-radius:4px;font-size:.75rem;font-weight:700}
+.badge-ok{background:#BFB800;color:#fff}
+.badge-alerta{background:#EA7600;color:#fff}
+.badge-null{background:#ccc;color:#555}
+.dashboard-footer{text-align:center;padding:24px;font-size:.75rem;color:#999;border-top:1px solid #eee;margin-top:32px}
+@media(max-width:768px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
+"""
+
 class _HTMLHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         pass  # silencia logs de acceso
@@ -36,6 +74,8 @@ class _HTMLHandler(BaseHTTPRequestHandler):
         path = self.path.split("?")[0]
         if path == "/health":
             self._respond(200, b"ok", "text/plain")
+        elif path == "/arauco.css":
+            self._respond(200, _ARAUCO_CSS.encode("utf-8"), "text/css; charset=utf-8")
         elif path.startswith("/g/"):
             gid  = path[3:]
             html = _HTML_STORE.get(gid)
@@ -749,9 +789,10 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
-    raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
+    prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
+    raw = claude_response(prompt, description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
     try:
@@ -855,159 +896,31 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo y lo envía aquí
 `/artifact pptx presentación resultados Q2 cosecha`"""
 
 ARTIFACT_PROMPTS = {
-    "html": """Eres el Agente DA (Analista de Datos) de Arauco — Subgerencia de Mejora Continua.
-Genera un dashboard HTML interactivo, completo y autocontenido basado en los datos recibidos.
+    "html": """Eres el Agente DA de Arauco — Subgerencia de Mejora Continua.
+Genera un dashboard HTML interactivo y autocontenido.
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CSS BASE OBLIGATORIO — incluye esto en <style>
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Lato', -apple-system, sans-serif; letter-spacing: -0.3px;
-       background: #f5f5f5; color: #333; }
-.dashboard-header { background: #696158; color: #fff; padding: 24px 32px;
-                    display: flex; align-items: center; justify-content: space-between; }
-.dashboard-title { font-size: 1.4rem; font-weight: 700; }
-.dashboard-subtitle { font-size: 0.85rem; color: rgba(255,255,255,0.7); font-weight: 300; }
-.dashboard { max-width: 1200px; margin: 0 auto; padding: 24px; }
-.grid { display: grid; gap: 16px; }
-.grid-2 { grid-template-columns: repeat(2, 1fr); }
-.grid-3 { grid-template-columns: repeat(3, 1fr); }
-.grid-4 { grid-template-columns: repeat(4, 1fr); }
-.card { background: #fff; border-radius: 10px; padding: 20px;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.06); border: 1px solid #eee; }
-.kpi-value { font-size: 2rem; font-weight: 900; color: #696158; }
-.kpi-label { font-size: 0.75rem; color: #999; text-transform: uppercase;
-             letter-spacing: 0.05em; margin-bottom: 4px; }
-.kpi-change { font-size: 0.85rem; margin-top: 6px; font-weight: 700; }
-.kpi-change.positive { color: #BFB800; }
-.kpi-change.negative { color: #C00000; }
-.kpi-change.neutral  { color: #999; }
-.section-title { font-size: 1rem; font-weight: 700; color: #696158;
-                 margin: 24px 0 12px; border-left: 4px solid #BFB800; padding-left: 10px; }
-.filtros-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
-               background: #fff; padding: 14px 20px; border-radius: 10px;
-               box-shadow: 0 2px 8px rgba(0,0,0,0.06); margin-bottom: 16px; }
-.filtros-bar select { padding: 7px 12px; border: 1px solid #DFD1A7; border-radius: 6px;
-                      font-family: 'Lato', sans-serif; font-size: 0.85rem; color: #696158;
-                      background: #fafafa; cursor: pointer; }
-.filtros-bar select:focus { outline: none; border-color: #696158; }
-.btn-limpiar { padding: 7px 14px; background: #EA7600; color: #fff; border: none;
-               border-radius: 6px; font-family: 'Lato', sans-serif; font-size: 0.85rem;
-               cursor: pointer; font-weight: 700; }
-.btn-limpiar:hover { background: #c96300; }
-.conteo-badge { font-size: 0.8rem; color: #999; margin-left: auto; }
-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
-thead tr { background: #696158; color: #fff; }
-th { padding: 10px 12px; text-align: left; font-weight: 700;
-     text-transform: uppercase; font-size: 0.75rem; letter-spacing: 0.04em; }
-td { padding: 8px 12px; border-bottom: 1px solid #eee; }
-tbody tr:nth-child(even) { background: #EDEAE6; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 4px;
-         font-size: 0.75rem; font-weight: 700; }
-.badge-ok  { background: #BFB800; color: #fff; }
-.badge-alerta { background: #EA7600; color: #fff; }
-.badge-null   { background: #ccc; color: #555; }
-.dashboard-footer { text-align: center; padding: 24px; font-size: 0.75rem;
-                    color: #999; border-top: 1px solid #eee; margin-top: 32px; }
-@media (max-width: 768px) {
-  .grid-2, .grid-3, .grid-4 { grid-template-columns: 1fr; }
-}
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-TECNOLOGÍAS DE VISUALIZACIÓN — elige la más adecuada
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Chart.js  → barras, líneas, dona, radar, scatter (siempre incluir)
-D3.js     → treemaps, sankeys, mapas, force graphs (incluir solo si aplica)
-SVG puro  → gauges, semáforos, diagramas de flujo custom
-HTML/CSS  → KPI cards, tablas, grids, indicadores de estado
-
-CDN:
+HEAD obligatorio:
+<link rel="stylesheet" href="{CSS_URL}">
 <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<!-- D3 solo si necesitas visualizaciones complejas: -->
-<!-- <script src="https://cdn.jsdelivr.net/npm/d3@7"></script> -->
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ESTRUCTURA DEL DASHBOARD
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-1. <head> — CSS base + CDNs
-2. Header — logo Arauco blanco + título + subtítulo con fuente y fecha
-3. KPI cards — .grid.grid-4, mínimo 4, con .kpi-label / .kpi-value / .kpi-change
-4. Filtros — .filtros-bar con <select> por columna categórica + botón limpiar + conteo
-5. Gráficos — mínimo 2 canvas Chart.js en .grid.grid-2 dentro de .card
-6. <script> con TODA la lógica JS ← AQUÍ, ANTES de la tabla
-7. Tabla filtrable — dentro de .card con overflow-x:auto
-8. Footer
+ESTRUCTURA:
+1. Header — .dashboard-header con .dashboard-title y .dashboard-subtitle (fuente + fecha)
+2. KPI cards — .grid.grid-4, mínimo 4, con .kpi-label / .kpi-value / .kpi-change (.positive/.negative/.neutral)
+3. Filtros — .filtros-bar con <select id="f-COL"> por columna categórica + .btn-limpiar + .conteo-badge
+4. <script> completo con: const DATOS=[...], const FILTROS_COLS=[...], const charts={}, funciones aplicarFiltros() / renderTabla() / actualizarGraficos() / limpiarFiltros(), inicialización en DOMContentLoaded
+5. Mínimo 2 gráficos Chart.js (canvas) en .grid.grid-2 dentro de .card
+6. Tabla filtrable en .card con overflow-x:auto (máx 50 filas)
+7. Footer — .dashboard-footer
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-JS OBLIGATORIO — estructura exacta, completa con datos reales
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-const COLORS = {
-  grisTierra:'#696158', verdeOliva:'#BFB800', naranja:'#EA7600',
-  crema:'#DFD1A7', blanco:'#FFFFFF', rojo:'#C00000'
-};
+COLORES JS: grisTierra:'#696158', verdeOliva:'#BFB800', naranja:'#EA7600'
 
-// Filas de datos — objetos con claves = nombres exactos de columna
-const DATOS = [ /* { "COL1": val, "COL2": val, ... } — poblar con muestra_top20 real */ ];
+DATOS:
+- EXCEL → usa stats[col].frecuencias para gráficos; muestra_top20 para DATOS[]
+- PDF/WORD → extrae tablas y cifras del texto
+- Nunca inventes cifras; formato chileno 1.234,5; .badge-null para vacíos
 
-// Columnas categóricas con filtro (nombres exactos de columna)
-const FILTROS_COLS = [ /* "COL_A", "COL_B" */ ];
-
-// Referencias a Chart instances (para poder actualizarlos)
-const charts = {};
-
-function aplicarFiltros() {
-  const vals = {};
-  FILTROS_COLS.forEach(col => {
-    const el = document.getElementById('f-' + col);
-    if (el) vals[col] = el.value;
-  });
-  const filtrados = DATOS.filter(row =>
-    FILTROS_COLS.every(col => !vals[col] || String(row[col]) === vals[col])
-  );
-  document.getElementById('conteo').textContent = filtrados.length + ' registros';
-  renderTabla(filtrados);
-  actualizarGraficos(filtrados);
-}
-
-function renderTabla(filas) {
-  document.getElementById('tabla-body').innerHTML = filas.slice(0, 50).map((row, i) => {
-    /* genera <td> con los campos relevantes — aplica .badge según valor */
-    return `<tr>${ Object.values(row).map(v => `<td>${v ?? ''}</td>`).join('') }</tr>`;
-  }).join('');
-}
-
-function actualizarGraficos(filas) {
-  /* Para cada chart: recalcula labels/values desde filas, luego chart.update() */
-  /* Ejemplo barras:
-  const cnt = {};
-  filas.forEach(r => { const v = String(r['COL_A'] ?? '-'); cnt[v] = (cnt[v]||0)+1; });
-  charts.barras.data.labels = Object.keys(cnt).slice(0,10);
-  charts.barras.data.datasets[0].data = Object.values(cnt).slice(0,10);
-  charts.barras.update();
-  */
-}
-
-function limpiarFiltros() {
-  FILTROS_COLS.forEach(col => { const el = document.getElementById('f-'+col); if(el) el.value=''; });
-  aplicarFiltros();
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-  /* Crear cada Chart instance y asignarlo a charts.nombre */
-  /* charts.barras = new Chart(document.getElementById('canvas-barras'), { type:'bar', ... }); */
-  aplicarFiltros();  // render inicial
-});
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-REGLAS DE DATOS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-EXCEL → usa stats[col].frecuencias para gráficos y opciones de filtro; muestra_top20 para DATOS[]
-PDF   → extrae tablas y cifras del texto; cita [Página N] como fuente
-WORD  → extrae [Tabla N] para DATOS[]; usa ## secciones como secciones del dashboard
-TODOS → nunca inventes cifras; formato chileno 1.234,5; badge-null para valores vacíos/nulos
-
-Responde ÚNICAMENTE con el código HTML. Sin markdown, sin explicaciones. Empieza con <!DOCTYPE html>.""",
+Responde ÚNICAMENTE con HTML. Sin markdown. Empieza con <!DOCTYPE html>.""",
 
     "excel": """Genera datos estructurados en formato JSON para crear un archivo Excel.
 
@@ -1808,9 +1721,10 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
-    raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
+    prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
+    raw = claude_response(prompt, description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
     try:
