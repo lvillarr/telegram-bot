@@ -527,6 +527,7 @@ ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
 ], [
     InlineKeyboardButton("📅 Gantt", callback_data="art_gantt"),
+    InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
@@ -535,6 +536,7 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
 ], [
     InlineKeyboardButton("📅 Gantt",          callback_data="art_gantt"),
+    InlineKeyboardButton("🖥️ PPT",            callback_data="art_pptx"),
     InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
 ]])
 
@@ -747,7 +749,7 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000}
+    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
@@ -794,6 +796,14 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f'Toca el enlace para abrir en tu browser:\n{url}',
                 parse_mode="HTML"
             )
+        elif artifact_type == "pptx":
+            data = extract_json(raw)
+            buf = build_pptx(data)
+            titulo = data.get("titulo", "presentacion-arauco").lower().replace(" ", "-")[:30]
+            await query.message.reply_document(
+                document=buf, filename=f"{titulo}.pptx",
+                caption="🖥️ Presentación PowerPoint generada — Arauco Mejora Continua"
+            )
     except (json.JSONDecodeError, ValueError) as e:
         await query.message.reply_text(
             f"⚠️ Error al parsear la respuesta del modelo: {str(e)[:120]}\n"
@@ -828,19 +838,21 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(fmt(reply), parse_mode="HTML")
 
 
-ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo visual y lo envía aquí
+ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo y lo envía aquí
 
 *Tipos disponibles:*
-• `html` — Dashboard interactivo
+• `html`  — Dashboard interactivo
 • `excel` — Tabla de datos en formato Excel
-• `pdf` — Informe ejecutivo en PDF
+• `pdf`   — Informe ejecutivo en PDF
 • `gantt` — Carta Gantt del proyecto
+• `pptx`  — Presentación PowerPoint
 
 *Uso:*
 `/artifact html dashboard OEE semanal línea 3`
 `/artifact excel tabla KPIs cosecha por turno`
 `/artifact pdf informe pérdidas semana 23`
-`/artifact gantt proyecto mejora bomba 42`"""
+`/artifact gantt proyecto mejora bomba 42`
+`/artifact pptx presentación resultados Q2 cosecha`"""
 
 ARTIFACT_PROMPTS = {
     "html": """Eres el Agente DA (Analista de Datos) de Arauco — Subgerencia de Mejora Continua.
@@ -1094,6 +1106,68 @@ REGLAS
 - Si el contexto tiene fechas y tareas reales: úsalas directamente
 - Si no hay fechas: inferir un proyecto realista según el contexto recibido
 - NUNCA inventes cifras de avance si hay datos reales""",
+
+    "pptx": """Eres el Agente DA (Analista de Datos) de Arauco — Subgerencia de Mejora Continua.
+Genera una presentación PowerPoint estructurada, profesional y lista para usar.
+
+Responde ÚNICAMENTE con un objeto JSON válido (sin explicaciones, sin bloques de código).
+
+Estructura JSON exacta:
+{
+  "titulo": "Título principal de la presentación",
+  "subtitulo": "Subtítulo o descripción breve",
+  "area": "Mejora Continua",
+  "fecha": "YYYY-MM-DD",
+  "autor": "Subgerencia de Mejora Continua — Arauco",
+  "diapositivas": [
+    {
+      "tipo": "portada",
+      "titulo": "Título de la presentación",
+      "subtitulo": "Subtítulo",
+      "nota": ""
+    },
+    {
+      "tipo": "contenido",
+      "titulo": "Título de la diapositiva",
+      "bullets": [
+        "Punto principal 1",
+        "Punto principal 2",
+        "Punto principal 3"
+      ],
+      "nota": "Notas del presentador opcionales"
+    },
+    {
+      "tipo": "tabla",
+      "titulo": "Título con tabla de datos",
+      "encabezados": ["Col A", "Col B", "Col C"],
+      "filas": [
+        ["valor1", "valor2", "valor3"],
+        ["valor4", "valor5", "valor6"]
+      ],
+      "nota": ""
+    },
+    {
+      "tipo": "cierre",
+      "titulo": "Conclusiones",
+      "bullets": ["Conclusión 1", "Conclusión 2"],
+      "nota": ""
+    }
+  ]
+}
+
+TIPOS DE DIAPOSITIVA:
+- "portada": slide de apertura (solo titulo y subtitulo)
+- "contenido": título + lista de bullets (máx 6 bullets por slide)
+- "tabla": título + tabla de datos (encabezados + filas)
+- "cierre": slide de cierre con conclusiones o próximos pasos
+
+REGLAS:
+- Mínimo 5 diapositivas, máximo 15
+- La primera debe ser tipo "portada" y la última tipo "cierre"
+- Bullets concisos, máx 12 palabras cada uno
+- Si hay datos reales en el contexto, úsalos LITERALMENTE en las tablas
+- NUNCA inventes KPIs ni cifras operacionales
+- Fecha en formato YYYY-MM-DD""",
 }
 
 
@@ -1516,6 +1590,174 @@ def build_excel(data: dict) -> io.BytesIO:
 
 
 
+def build_pptx(data: dict) -> io.BytesIO:
+    """Genera un archivo PowerPoint con diseño Arauco a partir del JSON estructurado."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt, Emu
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+
+    GRIS    = RGBColor(0x69, 0x61, 0x58)
+    AMARILLO = RGBColor(0xBF, 0xB8, 0x00)
+    NARANJA = RGBColor(0xEA, 0x76, 0x00)
+    BLANCO  = RGBColor(0xFF, 0xFF, 0xFF)
+    NEGRO   = RGBColor(0x22, 0x22, 0x22)
+    GRIS_L  = RGBColor(0x99, 0x99, 0x99)
+    CREMA   = RGBColor(0xED, 0xEA, 0xE6)
+
+    prs = Presentation()
+    prs.slide_width  = Inches(13.33)
+    prs.slide_height = Inches(7.5)
+
+    BLANK = prs.slide_layouts[6]  # layout en blanco
+
+    def _set_bg(slide, color: RGBColor):
+        from pptx.oxml.ns import qn
+        from lxml import etree
+        bg = slide.background
+        fill = bg.fill
+        fill.solid()
+        fill.fore_color.rgb = color
+
+    def _add_text_box(slide, text, left, top, width, height,
+                      font_size=18, bold=False, color=NEGRO,
+                      align=PP_ALIGN.LEFT, wrap=True):
+        txBox = slide.shapes.add_textbox(
+            Inches(left), Inches(top), Inches(width), Inches(height)
+        )
+        tf = txBox.text_frame
+        tf.word_wrap = wrap
+        p = tf.paragraphs[0]
+        p.alignment = align
+        run = p.add_run()
+        run.text = text
+        run.font.size = Pt(font_size)
+        run.font.bold = bold
+        run.font.color.rgb = color
+        return txBox
+
+    def _add_rect(slide, left, top, width, height, fill_color: RGBColor):
+        shape = slide.shapes.add_shape(
+            1,  # MSO_SHAPE_TYPE.RECTANGLE
+            Inches(left), Inches(top), Inches(width), Inches(height)
+        )
+        shape.fill.solid()
+        shape.fill.fore_color.rgb = fill_color
+        shape.line.fill.background()
+        return shape
+
+    for slide_data in data.get("diapositivas", []):
+        tipo  = slide_data.get("tipo", "contenido")
+        slide = prs.slides.add_slide(BLANK)
+
+        # ── PORTADA ───────────────────────────────────────────────────
+        if tipo == "portada":
+            _set_bg(slide, GRIS)
+            _add_rect(slide, 0, 0, 13.33, 0.12, AMARILLO)   # línea top
+            _add_rect(slide, 0, 7.38, 13.33, 0.12, AMARILLO) # línea bottom
+            _add_text_box(slide, "ARAUCO", 1.0, 0.5, 11, 0.7,
+                          font_size=13, bold=True, color=AMARILLO)
+            _add_text_box(slide, slide_data.get("titulo", ""),
+                          1.0, 2.0, 11.33, 2.0,
+                          font_size=36, bold=True, color=BLANCO, wrap=True)
+            _add_text_box(slide, slide_data.get("subtitulo", ""),
+                          1.0, 4.2, 11.33, 1.2,
+                          font_size=20, bold=False, color=CREMA, wrap=True)
+            _add_text_box(slide,
+                          f"{data.get('area','')}  |  {data.get('fecha','')}  |  {data.get('autor','')}",
+                          1.0, 6.6, 11.33, 0.6,
+                          font_size=10, bold=False, color=GRIS_L)
+
+        # ── CIERRE ────────────────────────────────────────────────────
+        elif tipo == "cierre":
+            _set_bg(slide, GRIS)
+            _add_rect(slide, 0, 0, 13.33, 0.12, AMARILLO)
+            _add_rect(slide, 0, 7.38, 13.33, 0.12, AMARILLO)
+            _add_text_box(slide, slide_data.get("titulo", "Conclusiones"),
+                          1.0, 1.5, 11.33, 1.2,
+                          font_size=30, bold=True, color=BLANCO)
+            bullets = slide_data.get("bullets", [])
+            y = 3.0
+            for bullet in bullets:
+                _add_text_box(slide, f"• {bullet}", 1.2, y, 10.8, 0.55,
+                              font_size=16, color=CREMA, wrap=True)
+                y += 0.6
+
+        # ── TABLA ─────────────────────────────────────────────────────
+        elif tipo == "tabla":
+            _set_bg(slide, BLANCO)
+            _add_rect(slide, 0, 0, 13.33, 1.1, GRIS)
+            _add_text_box(slide, slide_data.get("titulo", ""),
+                          0.3, 0.18, 12.73, 0.75,
+                          font_size=22, bold=True, color=BLANCO)
+            headers = slide_data.get("encabezados", [])
+            rows    = slide_data.get("filas", [])
+            if headers:
+                cols = len(headers)
+                rows_total = 1 + len(rows)
+                tbl_left   = Inches(0.4)
+                tbl_top    = Inches(1.3)
+                tbl_width  = Inches(12.53)
+                tbl_height = Inches(min(rows_total * 0.45, 5.5))
+                table = slide.shapes.add_table(
+                    rows_total, cols, tbl_left, tbl_top, tbl_width, tbl_height
+                ).table
+                col_w = int(tbl_width / cols)
+                for c in range(cols):
+                    table.columns[c].width = col_w
+
+                # Encabezado
+                for c, h in enumerate(headers):
+                    cell = table.cell(0, c)
+                    cell.text = h
+                    cell.fill.solid()
+                    cell.fill.fore_color.rgb = GRIS
+                    p = cell.text_frame.paragraphs[0]
+                    p.alignment = PP_ALIGN.CENTER
+                    run = p.runs[0] if p.runs else p.add_run()
+                    run.font.bold  = True
+                    run.font.size  = Pt(11)
+                    run.font.color.rgb = BLANCO
+
+                # Filas de datos
+                for r, fila in enumerate(rows, start=1):
+                    bg = CREMA if r % 2 == 0 else BLANCO
+                    for c, val in enumerate(fila[:cols]):
+                        cell = table.cell(r, c)
+                        cell.text = str(val)
+                        cell.fill.solid()
+                        cell.fill.fore_color.rgb = bg
+                        p = cell.text_frame.paragraphs[0]
+                        run = p.runs[0] if p.runs else p.add_run()
+                        run.font.size  = Pt(10)
+                        run.font.color.rgb = NEGRO
+
+        # ── CONTENIDO (default) ───────────────────────────────────────
+        else:
+            _set_bg(slide, BLANCO)
+            _add_rect(slide, 0, 0, 13.33, 1.1, GRIS)
+            _add_text_box(slide, slide_data.get("titulo", ""),
+                          0.3, 0.18, 12.73, 0.75,
+                          font_size=22, bold=True, color=BLANCO)
+            _add_rect(slide, 0.4, 1.15, 0.06, 5.9, AMARILLO)  # barra lateral
+            bullets = slide_data.get("bullets", [])
+            y = 1.3
+            for bullet in bullets[:6]:
+                _add_text_box(slide, f"  {bullet}", 0.6, y, 12.33, 0.65,
+                              font_size=16, color=NEGRO, wrap=True)
+                y += 0.72
+
+        # Notas del presentador
+        nota = slide_data.get("nota", "")
+        if nota:
+            slide.notes_slide.notes_text_frame.text = nota
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf
+
+
 async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
         await update.message.reply_text(ARTIFACT_HELP, parse_mode="Markdown")
@@ -1526,7 +1768,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if artifact_type not in ARTIFACT_PROMPTS:
         await update.message.reply_text(
-            f"Tipo `{artifact_type}` no reconocido. Usa: `html`, `excel`, `pdf` o `gantt`.",
+            f"Tipo `{artifact_type}` no reconocido. Usa: `html`, `excel`, `pdf`, `gantt` o `pptx`.",
             parse_mode="Markdown"
         )
         return
@@ -1541,7 +1783,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"⏳ Generando artefacto *{artifact_type}*...", parse_mode="Markdown")
 
     # Enriquecer description con datos del documento cargado (igual que artifact_callback)
-    if artifact_type in ("html", "pdf", "gantt"):
+    if artifact_type in ("html", "pdf", "gantt", "pptx"):
         structured_data = context.user_data.get("structured_data", {})
         doc_content     = context.user_data.get("doc_content", "")
         doc_tipo        = context.user_data.get("doc_tipo", "")
@@ -1566,7 +1808,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000}
+    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
     artifact_tokens = _tokens_map.get(artifact_type, 4000)
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
@@ -1614,6 +1856,15 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             filename = f"arauco-{data.get('titulo', 'datos').lower().replace(' ', '-')[:30]}.xlsx"
             await update.message.reply_document(document=buf, filename=filename,
                                                 caption="📊 Excel generado con datos del contexto forestal")
+
+        elif artifact_type == "pptx":
+            data = extract_json(raw)
+            buf = build_pptx(data)
+            titulo = data.get("titulo", "presentacion-arauco").lower().replace(" ", "-")[:30]
+            await update.message.reply_document(
+                document=buf, filename=f"{titulo}.pptx",
+                caption="🖥️ Presentación PowerPoint generada — Arauco Mejora Continua"
+            )
 
     except (json.JSONDecodeError, ValueError) as e:
         await update.message.reply_text(
