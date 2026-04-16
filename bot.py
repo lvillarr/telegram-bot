@@ -5,7 +5,7 @@ import json
 import time
 import uuid
 import base64
-import asyncio
+import threading
 import tempfile
 import anthropic
 import groq as groq_lib
@@ -16,20 +16,56 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from collections import OrderedDict
-from aiohttp import web as aiohttp_web
+from http.server import HTTPServer, BaseHTTPRequestHandler
 from docx import Document as DocxDocument
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import html as _html
 from telegram.ext import ContextTypes
 
-# ── Servidor HTTP para servir archivos generados (Gantt, etc.) ──────────────
-# Telegram abre URLs en el browser externo del sistema (Chrome/Safari)
-# en vez del viewer embebido que no soporta JS/CDN.
+# ── Servidor HTTP (hilo de fondo) para servir HTML como URL pública ──────────
 _HTML_STORE: OrderedDict = OrderedDict()   # uuid → html_string (máx 100 entradas)
-_MAX_STORE   = 100
-PUBLIC_BASE  = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
-PUBLIC_BASE  = f"https://{PUBLIC_BASE}" if PUBLIC_BASE else f"http://localhost:{os.environ.get('PORT', 8080)}"
+_MAX_STORE  = 100
+_HTTP_PORT  = int(os.environ.get("PORT", 8080))
+PUBLIC_BASE = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+PUBLIC_BASE = f"https://{PUBLIC_BASE}" if PUBLIC_BASE else f"http://localhost:{_HTTP_PORT}"
+
+
+class _HTMLHandler(BaseHTTPRequestHandler):
+    def log_message(self, fmt, *args):
+        pass  # silencia logs de acceso
+
+    def do_GET(self):
+        path = self.path.split("?")[0]
+        if path == "/health":
+            self._respond(200, b"ok", "text/plain")
+        elif path.startswith("/g/"):
+            gid  = path[3:]
+            html = _HTML_STORE.get(gid)
+            if html:
+                data = html.encode("utf-8")
+                self._respond(200, data, "text/html; charset=utf-8")
+            else:
+                self._respond(404, b"No encontrado o expirado.", "text/plain")
+        else:
+            self._respond(404, b"", "text/plain")
+
+    def _respond(self, code, body, ctype):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def _start_http_server():
+    server = HTTPServer(("0.0.0.0", _HTTP_PORT), _HTMLHandler)
+    print(f"[HTTP] servidor en 0.0.0.0:{_HTTP_PORT}  |  base: {PUBLIC_BASE}")
+    server.serve_forever()
+
+
+# Arranca el servidor en un hilo daemon (muere cuando termina el proceso)
+threading.Thread(target=_start_http_server, daemon=True).start()
 
 
 def fmt(text: str) -> str:
@@ -566,9 +602,8 @@ EXT_MAP = {
 }
 # Captions y nombres de archivo para tipos de bloque específicos
 FILE_META = {
-    "html": ("dashboard-arauco.html", "🌐 Abre este archivo en tu browser"),
-    "css":  ("estilos.css",           "🎨 Hoja de estilos"),
-    "json": ("datos.json",            "📋 Datos en JSON"),
+    "css":  ("estilos.css",  "🎨 Hoja de estilos"),
+    "json": ("datos.json",   "📋 Datos en JSON"),
 }
 
 async def send_reply(update: Update, text: str, reply_markup=None):
@@ -607,20 +642,29 @@ async def send_reply(update: Update, text: str, reply_markup=None):
         except Exception:
             await update.message.reply_text(clean_text, reply_markup=reply_markup)
 
-    # Enviar cada bloque como archivo
+    # Enviar cada bloque — HTML como URL, resto como archivo
     for i, (lang, code) in enumerate(large_blocks, 1):
         lang_key = lang.lower()
-        ext = EXT_MAP.get(lang_key, "txt")
-        if lang_key in FILE_META:
-            filename, caption = FILE_META[lang_key]
-            if len(large_blocks) > 1:
-                base, dot_ext = filename.rsplit(".", 1)
-                filename = f"{base}_{i}.{dot_ext}"
+        if lang_key == "html":
+            # HTML → servidor HTTP → URL que abre en browser externo
+            url = store_html(code.strip())
+            label = "Dashboard" if i == 1 else f"Artefacto {i}"
+            await update.message.reply_text(
+                f"🌐 <b>{label} HTML listo</b>\n\nToca el enlace para abrirlo en tu browser:\n{url}",
+                parse_mode="HTML"
+            )
         else:
-            filename = f"script_{i}.{ext}" if len(large_blocks) > 1 else f"script.{ext}"
-            caption  = f"📎 {filename} — copia y ejecuta en tu entorno"
-        buf = io.BytesIO(code.strip().encode("utf-8"))
-        await update.message.reply_document(document=buf, filename=filename, caption=caption)
+            ext = EXT_MAP.get(lang_key, "txt")
+            if lang_key in FILE_META:
+                filename, caption = FILE_META[lang_key]
+                if len(large_blocks) > 1:
+                    base, dot_ext = filename.rsplit(".", 1)
+                    filename = f"{base}_{i}.{dot_ext}"
+            else:
+                filename = f"script_{i}.{ext}" if len(large_blocks) > 1 else f"script.{ext}"
+                caption  = f"📎 {filename} — copia y ejecuta en tu entorno"
+            buf = io.BytesIO(code.strip().encode("utf-8"))
+            await update.message.reply_document(document=buf, filename=filename, caption=caption)
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -723,10 +767,11 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
                 await query.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
-            buf = io.BytesIO(html.encode("utf-8"))
-            await query.message.reply_document(
-                document=buf, filename="dashboard-arauco.html",
-                caption="🌲 Dashboard listo — abre el archivo en tu browser"
+            url = store_html(html)
+            await query.message.reply_text(
+                f"🌲 <b>Dashboard interactivo listo</b>\n\n"
+                f"Toca el enlace para abrirlo en tu browser:\n{url}",
+                parse_mode="HTML"
             )
         elif artifact_type == "excel":
             cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -1091,19 +1136,7 @@ def store_html(html: str) -> str:
     return f"{PUBLIC_BASE}/g/{gid}"
 
 
-async def http_serve_html(request: aiohttp_web.Request) -> aiohttp_web.Response:
-    gid = request.match_info.get("gid", "")
-    html = _HTML_STORE.get(gid)
-    if not html:
-        return aiohttp_web.Response(status=404, text="No encontrado o expirado.")
-    return aiohttp_web.Response(content_type="text/html", body=html.encode("utf-8"))
-
-
-async def http_health(request: aiohttp_web.Request) -> aiohttp_web.Response:
-    return aiohttp_web.Response(text="ok")
-
-
-def build_gantt(data: dict) -> io.BytesIO:
+def build_gantt(data: dict) -> str:
     """
     Genera un Gantt HTML/CSS puro — sin JavaScript ni CDN externos.
     Python calcula todas las posiciones. Funciona en cualquier browser,
@@ -1599,11 +1632,12 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
                 await update.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
-            buf = io.BytesIO(html.encode("utf-8"))
-            filenames = {"html": "dashboard-arauco.html"}
-            captions  = {"html": "🌲 Dashboard listo — abre el archivo en tu browser"}
-            await update.message.reply_document(document=buf, filename=filenames[artifact_type],
-                                                caption=captions[artifact_type])
+            url = store_html(html)
+            await update.message.reply_text(
+                f"🌲 <b>Dashboard interactivo listo</b>\n\n"
+                f"Toca el enlace para abrirlo en tu browser:\n{url}",
+                parse_mode="HTML"
+            )
 
         elif artifact_type == "pdf":
             cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
@@ -2123,27 +2157,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
 
-async def main():
-    """Corre el bot de Telegram y el servidor HTTP en paralelo."""
-    port = int(os.environ.get("PORT", 8080))
-
-    # ── Servidor aiohttp para servir HTMLs generados ────────────────────────
-    web_app = aiohttp_web.Application()
-    web_app.router.add_get("/g/{gid}", http_serve_html)
-    web_app.router.add_get("/health",  http_health)
-    runner = aiohttp_web.AppRunner(web_app)
-    await runner.setup()
-    await aiohttp_web.TCPSite(runner, "0.0.0.0", port).start()
-    print(f"[HTTP] servidor en 0.0.0.0:{port}  |  base URL: {PUBLIC_BASE}")
-
-    # ── Bot de Telegram (polling) ────────────────────────────────────────────
-    async with app:
-        await app.start()
-        await app.updater.start_polling(drop_pending_updates=True)
-        print("[BOT] polling iniciado")
-        # Espera indefinida hasta señal de cierre
-        stop = asyncio.Event()
-        await stop.wait()
-
-
-asyncio.run(main())
+app.run_polling(drop_pending_updates=True)
