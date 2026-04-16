@@ -752,7 +752,8 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
 
     artifact_model  = "claude-sonnet-4-6"
-    artifact_tokens = 16000 if artifact_type == "html" else 2000
+    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "chart": 2000}
+    artifact_tokens = _tokens_map.get(artifact_type, 4000)
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
@@ -774,8 +775,7 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode="HTML"
             )
         elif artifact_type == "excel":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             buf = build_excel(data)
             filename = f"arauco-{data.get('titulo','datos').lower().replace(' ','-')[:30]}.xlsx"
             await query.message.reply_document(
@@ -783,16 +783,14 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption="📊 Excel generado con datos del análisis forestal"
             )
         elif artifact_type == "chart":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             buf = build_chart(data)
             await query.message.reply_photo(
                 photo=buf,
                 caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua"
             )
         elif artifact_type == "pdf":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             buf = build_pdf(data)
             titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
             await query.message.reply_document(
@@ -800,8 +798,7 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 caption="📄 Informe PDF generado — Arauco Mejora Continua"
             )
         elif artifact_type == "gantt":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             url = build_gantt(data)
             titulo = data.get("titulo", "Carta Gantt")
             await query.message.reply_text(
@@ -809,8 +806,11 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f'Toca el enlace para abrir en tu browser:\n{url}',
                 parse_mode="HTML"
             )
-    except json.JSONDecodeError:
-        await query.message.reply_text("⚠️ Error al procesar. Intenta de nuevo.")
+    except (json.JSONDecodeError, ValueError) as e:
+        await query.message.reply_text(
+            f"⚠️ Error al parsear la respuesta del modelo: {str(e)[:120]}\n"
+            f"Respuesta recibida (inicio): {raw[:200]}"
+        )
     except Exception as e:
         await query.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
 
@@ -1125,6 +1125,28 @@ REGLAS
 - Si no hay fechas: inferir un proyecto realista según el contexto recibido
 - NUNCA inventes cifras de avance si hay datos reales""",
 }
+
+
+def extract_json(raw: str) -> dict:
+    """
+    Extrae y parsea el JSON de la respuesta de Claude de forma robusta.
+    Maneja: bloques ```json ... ```, bloques ``` ... ```, y JSON directo.
+    """
+    text = raw.strip()
+    # Quitar bloque de código si lo hay
+    if text.startswith("```"):
+        lines = text.split("\n")
+        # quitar primera línea (```json o ```) y última línea (```)
+        inner = "\n".join(lines[1:])
+        if inner.rstrip().endswith("```"):
+            inner = inner.rstrip()[:-3].rstrip()
+        text = inner.strip()
+    # Buscar el primer { y el último } para extraer solo el JSON
+    start = text.find("{")
+    end   = text.rfind("}")
+    if start != -1 and end != -1 and end > start:
+        text = text[start:end+1]
+    return json.loads(text)
 
 
 def store_html(html: str) -> str:
@@ -1616,8 +1638,9 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif last_analysis:
             description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
 
-    artifact_model = "claude-sonnet-4-6"
-    artifact_tokens = 16000 if artifact_type == "html" else 4000
+    artifact_model  = "claude-sonnet-4-6"
+    _tokens_map = {"html": 16000, "pdf": 6000, "gantt": 4000, "excel": 3000, "chart": 2000}
+    artifact_tokens = _tokens_map.get(artifact_type, 4000)
     raw = claude_response(ARTIFACT_PROMPTS[artifact_type], description,
                           max_tokens=artifact_tokens, model=artifact_model)
 
@@ -1640,8 +1663,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         elif artifact_type == "pdf":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             buf = build_pdf(data)
             titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
             await update.message.reply_document(
@@ -1650,8 +1672,7 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         elif artifact_type == "gantt":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             url = build_gantt(data)
             titulo = data.get("titulo", "Carta Gantt")
             await update.message.reply_text(
@@ -1661,23 +1682,22 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         elif artifact_type == "excel":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             buf = build_excel(data)
             filename = f"arauco-{data.get('titulo', 'datos').lower().replace(' ', '-')[:30]}.xlsx"
             await update.message.reply_document(document=buf, filename=filename,
                                                 caption="📊 Excel generado con datos del contexto forestal")
 
         elif artifact_type == "chart":
-            cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```").strip()
-            data = json.loads(cleaned)
+            data = extract_json(raw)
             buf = build_chart(data)
             await update.message.reply_photo(photo=buf,
                                              caption=f"📈 {data.get('titulo', 'Gráfico')} — Arauco Mejora Continua")
 
-    except json.JSONDecodeError:
+    except (json.JSONDecodeError, ValueError) as e:
         await update.message.reply_text(
-            "⚠️ Error al procesar la respuesta. Intenta con una descripción más específica."
+            f"⚠️ Error al parsear respuesta del modelo: {str(e)[:120]}\n"
+            f"Inicio de respuesta: {raw[:200]}"
         )
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error generando el artefacto: {str(e)[:200]}")
