@@ -1070,8 +1070,12 @@ REGLAS
 
 
 def build_gantt(data: dict) -> io.BytesIO:
-    """Genera un HTML con Google Charts Gantt a partir del JSON de tareas."""
-    from datetime import datetime
+    """
+    Genera un Gantt HTML/CSS puro — sin JavaScript ni CDN externos.
+    Python calcula todas las posiciones. Funciona en cualquier browser,
+    incluido el visor embebido de Telegram en iOS/Android.
+    """
+    from datetime import datetime, timedelta
 
     AREA_COLORS = {
         "EO":      "#BFB800",
@@ -1080,162 +1084,186 @@ def build_gantt(data: dict) -> io.BytesIO:
         "Gestión": "#696158",
         "Riesgo":  "#C00000",
     }
+    AREA_BG = {      # versión semitransparente para borde/fondo
+        "EO":      "#f0edbb",
+        "TD":      "#fde8cc",
+        "IA":      "#cde0f5",
+        "Gestión": "#e0dcd8",
+        "Riesgo":  "#f5cccc",
+    }
 
-    titulo   = data.get("titulo", "Carta Gantt")
-    subtitulo= data.get("subtitulo", "Arauco — Mejora Continua")
-    fecha    = data.get("fecha", "")
-    tareas   = data.get("tareas", [])
+    titulo    = data.get("titulo", "Carta Gantt")
+    subtitulo = data.get("subtitulo", "Arauco — Mejora Continua")
+    fecha     = data.get("fecha", "")
+    tareas    = data.get("tareas", [])
 
-    # Construir filas JS para Google Charts DataTable
-    rows_js = []
+    # ── Parsear y validar tareas ─────────────────────────────
+    parsed = []
     for t in tareas:
         try:
-            d_ini = datetime.strptime(t["inicio"], "%Y-%m-%d")
-            d_fin = datetime.strptime(t["fin"],    "%Y-%m-%d")
+            ini = datetime.strptime(t["inicio"], "%Y-%m-%d").date()
+            fin = datetime.strptime(t["fin"],    "%Y-%m-%d").date()
+            if fin <= ini:
+                fin = ini + timedelta(days=1)
         except (KeyError, ValueError):
             continue
+        try:
+            avance = max(0, min(100, int(float(t.get("avance", 0) or 0))))
+        except (TypeError, ValueError):
+            avance = 0
+        parsed.append({
+            "nombre":      t.get("nombre", "Tarea"),
+            "area":        t.get("area", "Gestión"),
+            "responsable": t.get("responsable", ""),
+            "ini": ini, "fin": fin, "avance": avance,
+        })
 
-        task_id   = str(t.get("id", ""))
-        nombre    = t.get("nombre", "Tarea").replace("'", "\\'")
-        area      = t.get("area", "Gestión")
-        resp      = t.get("responsable", "").replace("'", "\\'")
-        avance    = int(t.get("avance", 0))
-        deps      = str(t.get("deps", "")) or "null"
-        if deps != "null":
-            deps = f"'{deps}'"
+    if not parsed:
+        parsed = [{"nombre": "Sin tareas", "area": "Gestión",
+                   "responsable": "", "ini": datetime.today().date(),
+                   "fin": datetime.today().date() + timedelta(days=7), "avance": 0}]
 
-        label = f"{nombre} ({resp})" if resp else nombre
-        color = AREA_COLORS.get(area, "#696158")
+    # ── Rango total del proyecto ─────────────────────────────
+    total_ini = min(t["ini"] for t in parsed)
+    total_fin = max(t["fin"] for t in parsed)
+    total_days = max((total_fin - total_ini).days, 1)
 
-        rows_js.append(
-            f"  ['{task_id}', '{label}', '{color}', "
-            f"new Date({d_ini.year},{d_ini.month-1},{d_ini.day}), "
-            f"new Date({d_fin.year},{d_fin.month-1},{d_fin.day}), "
-            f"null, {avance}, {deps}]"
-        )
+    # ── Semanas del eje X ────────────────────────────────────
+    # Empezar en lunes anterior al total_ini
+    from datetime import date
+    axis_start = total_ini - timedelta(days=total_ini.weekday())
+    axis_end   = total_fin + timedelta(days=(6 - total_fin.weekday()))
+    axis_days  = max((axis_end - axis_start).days, 1)
 
-    rows_str = ",\n".join(rows_js)
+    semanas = []
+    cur = axis_start
+    while cur < axis_end:
+        semanas.append(cur)
+        cur += timedelta(days=7)
 
-    # Leyenda
-    leyenda_items = "".join(
-        f'<span class="leg-item"><span class="leg-dot" style="background:{c}"></span>{a}</span>'
+    def pct(d):
+        """% de posición de una fecha dentro del eje."""
+        return round((d - axis_start).days / axis_days * 100, 3)
+
+    # ── Avance promedio ──────────────────────────────────────
+    prom_avance = round(sum(t["avance"] for t in parsed) / len(parsed))
+
+    # ── Leyenda HTML ─────────────────────────────────────────
+    leyenda_html = "".join(
+        f'<span class="leg"><span class="leg-dot" style="background:{c}"></span>{a}</span>'
         for a, c in AREA_COLORS.items()
     )
 
-    # Avance promedio — robusto ante valores string/float/None
-    avances = []
-    for t in tareas:
-        try:
-            avances.append(int(float(t.get("avance", 0) or 0)))
-        except (TypeError, ValueError):
-            avances.append(0)
-    prom_avance = round(sum(avances) / len(avances)) if avances else 0
+    # ── Marcas de semana en el eje ───────────────────────────
+    MESES = ["Ene","Feb","Mar","Abr","May","Jun","Jul","Ago","Sep","Oct","Nov","Dic"]
+    axis_ticks = ""
+    for s in semanas:
+        left = pct(s)
+        lbl  = f"{s.day} {MESES[s.month-1]}"
+        axis_ticks += (
+            f'<div class="tick" style="left:{left}%">'
+            f'<span class="tick-lbl">{lbl}</span></div>'
+        )
 
-    # Longitud máxima del label para calcular labelMaxWidth
-    max_label_len = max(
-        (len(f"{t.get('nombre','')} ({t.get('responsable','')})") for t in tareas),
-        default=20
-    )
-    label_col_px = min(max(max_label_len * 7, 220), 380)
+    # ── Línea "Hoy" ──────────────────────────────────────────
+    hoy = datetime.today().date()
+    hoy_html = ""
+    if axis_start <= hoy <= axis_end:
+        hoy_html = (
+            f'<div class="hoy-line" style="left:{pct(hoy)}%" title="Hoy">'
+            f'<span class="hoy-lbl">Hoy</span></div>'
+        )
+
+    # ── Filas de tareas ──────────────────────────────────────
+    filas_html = ""
+    for i, t in enumerate(parsed):
+        color  = AREA_COLORS.get(t["area"], "#696158")
+        bg     = AREA_BG.get(t["area"], "#e8e8e8")
+        row_bg = "#ffffff" if i % 2 == 0 else "#f7f6f4"
+        left_  = pct(t["ini"])
+        width_ = max(pct(t["fin"]) - left_, 0.5)
+        avance_w = round(width_ * t["avance"] / 100, 3)
+        dur_dias = (t["fin"] - t["ini"]).days
+        ini_str  = t["ini"].strftime("%-d %b")
+        fin_str  = t["fin"].strftime("%-d %b")
+        resp_str = f" · {t['responsable']}" if t["responsable"] else ""
+
+        filas_html += f"""
+<div class="row" style="background:{row_bg}">
+  <div class="row-label">
+    <span class="dot" style="background:{color}"></span>
+    <div>
+      <div class="task-name">{t['nombre']}</div>
+      <div class="task-meta">{t['area']}{resp_str}</div>
+    </div>
+  </div>
+  <div class="row-bar">
+    <div class="bar-bg" style="left:{left_}%;width:{width_}%;background:{bg};border-color:{color}">
+      <div class="bar-fg" style="width:{avance_w / width_ * 100 if width_ else 0}%;background:{color}"></div>
+      <span class="bar-lbl">{ini_str} → {fin_str} &nbsp;|&nbsp; {t['avance']}% &nbsp;({dur_dias}d)</span>
+    </div>
+    {hoy_html}
+  </div>
+</div>"""
 
     html = f"""<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>{titulo}</title>
-<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
 <style>
-  * {{ box-sizing: border-box; margin: 0; padding: 0; }}
-  body {{ font-family: Arial, sans-serif; background: #f5f4f2; }}
-  .header {{ background: #696158; color: #fff; padding: 20px 32px; }}
-  .header h1 {{ font-size: 1.4rem; font-weight: 900; letter-spacing: 0.02em; }}
-  .header p  {{ font-size: 0.85rem; opacity: 0.8; margin-top: 4px; }}
-  .controls {{ background: #fff; padding: 14px 32px; border-bottom: 1px solid #EDEAE6;
-               display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }}
-  .badge {{ background: #696158; color: #fff; border-radius: 20px; padding: 4px 14px;
-            font-size: 0.8rem; font-weight: 700; }}
-  .badge-verde {{ background: #BFB800; }}
-  .leyenda {{ display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }}
-  .leg-item {{ display: flex; align-items: center; gap: 5px; font-size: 0.78rem; color: #555; }}
-  .leg-dot  {{ width: 12px; height: 12px; border-radius: 3px; display: inline-block; }}
-  #chart_div {{ padding: 8px 16px 16px; background: #fff; margin: 16px;
-                border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-                overflow-x: auto; }}
-  .footer {{ background: #696158; color: #fff; text-align: center;
-             padding: 14px; font-size: 0.78rem; opacity: 0.9; margin-top: 24px; }}
+*{{box-sizing:border-box;margin:0;padding:0}}
+body{{font-family:Arial,Helvetica,sans-serif;background:#f0ede9;color:#333}}
+.header{{background:#696158;color:#fff;padding:16px 20px}}
+.header h1{{font-size:1.1rem;font-weight:900}}
+.header p{{font-size:0.75rem;opacity:.8;margin-top:3px}}
+.controls{{background:#fff;padding:10px 20px;border-bottom:1px solid #EDEAE6;
+           display:flex;flex-wrap:wrap;align-items:center;gap:12px}}
+.badge{{background:#BFB800;color:#fff;border-radius:12px;padding:3px 12px;
+        font-size:0.78rem;font-weight:700;white-space:nowrap}}
+.leg{{display:inline-flex;align-items:center;gap:4px;font-size:0.72rem;color:#555}}
+.leg-dot{{width:10px;height:10px;border-radius:2px;flex-shrink:0}}
+.gantt{{overflow-x:auto;padding:12px 20px}}
+.axis{{position:relative;height:28px;margin-left:160px;border-bottom:2px solid #ccc;margin-bottom:0}}
+.tick{{position:absolute;top:0;transform:translateX(-50%);display:flex;flex-direction:column;align-items:center}}
+.tick::before{{content:'';display:block;width:1px;height:8px;background:#ccc}}
+.tick-lbl{{font-size:0.62rem;color:#888;white-space:nowrap;margin-top:2px}}
+.row{{display:flex;align-items:center;min-height:44px;border-bottom:1px solid #EDEAE6}}
+.row-label{{width:160px;min-width:160px;padding:6px 10px 6px 4px;display:flex;
+            align-items:flex-start;gap:6px;flex-shrink:0}}
+.dot{{width:8px;height:8px;border-radius:2px;margin-top:4px;flex-shrink:0}}
+.task-name{{font-size:0.75rem;font-weight:700;line-height:1.3;color:#333}}
+.task-meta{{font-size:0.65rem;color:#888;margin-top:1px}}
+.row-bar{{flex:1;position:relative;height:44px;min-width:0}}
+.bar-bg{{position:absolute;top:50%;transform:translateY(-50%);height:22px;
+         border-radius:4px;border:1.5px solid;overflow:hidden;min-width:4px}}
+.bar-fg{{height:100%;border-radius:3px;opacity:0.9}}
+.bar-lbl{{position:absolute;left:4px;top:50%;transform:translateY(-50%);
+          font-size:0.6rem;color:#333;white-space:nowrap;font-weight:600;
+          pointer-events:none;mix-blend-mode:multiply}}
+.hoy-line{{position:absolute;top:0;bottom:0;width:2px;background:#C00000;
+           opacity:.7;pointer-events:none;z-index:10}}
+.hoy-lbl{{position:absolute;top:2px;left:3px;font-size:0.58rem;
+          color:#C00000;white-space:nowrap;font-weight:700}}
+.footer{{background:#696158;color:#fff;text-align:center;
+         padding:12px;font-size:0.72rem;opacity:.9;margin-top:16px}}
 </style>
 </head>
 <body>
-
 <div class="header">
   <h1>{titulo}</h1>
-  <p>{subtitulo} &nbsp;|&nbsp; {fecha}</p>
+  <p>{subtitulo} &nbsp;·&nbsp; {fecha}</p>
 </div>
-
 <div class="controls">
-  <span class="badge badge-verde" id="badge-avance">▶ Avance promedio: {prom_avance}%</span>
-  <div class="leyenda">{leyenda_items}</div>
+  <span class="badge">Avance promedio: {prom_avance}%</span>
+  {leyenda_html}
 </div>
-
-<div id="chart_div"></div>
-
+<div class="gantt">
+  <div class="axis">{axis_ticks}</div>
+  {filas_html}
+</div>
 <div class="footer">Arauco — Subgerencia de Mejora Continua &nbsp;|&nbsp; {fecha}</div>
-
-<script type="text/javascript">
-  google.charts.load('current', {{'packages': ['gantt']}});
-  google.charts.setOnLoadCallback(drawChart);
-
-  function drawChart() {{
-    var data = new google.visualization.DataTable();
-    data.addColumn('string', 'ID');
-    data.addColumn('string', 'Tarea');
-    data.addColumn('string', 'Recurso');
-    data.addColumn('date',   'Inicio');
-    data.addColumn('date',   'Fin');
-    data.addColumn('number', 'Duración');
-    data.addColumn('number', 'Avance');
-    data.addColumn('string', 'Dependencias');
-
-    data.addRows([
-{rows_str}
-    ]);
-
-    // Recalcular avance promedio con datos reales del DataTable
-    var total = 0;
-    for (var i = 0; i < data.getNumberOfRows(); i++) {{
-      total += (data.getValue(i, 6) || 0);
-    }}
-    var prom = Math.round(total / data.getNumberOfRows());
-    document.getElementById('badge-avance').textContent = '▶ Avance promedio: ' + prom + '%';
-
-    var options = {{
-      width:  '100%',
-      height: Math.max(200, data.getNumberOfRows() * 44 + 60),
-      gantt: {{
-        trackHeight:   38,
-        barHeight:     24,
-        labelMaxWidth: {label_col_px},
-        labelStyle:    {{ fontName: 'Arial', fontSize: 12, color: '#333' }},
-        palette: [
-          {{ color: '#BFB800', dark: '#8a8400', light: '#ddd700' }},
-          {{ color: '#EA7600', dark: '#b85c00', light: '#ffa040' }},
-          {{ color: '#2D6A9F', dark: '#1d4a70', light: '#5090cc' }},
-          {{ color: '#696158', dark: '#4a453f', light: '#9e9590' }},
-          {{ color: '#C00000', dark: '#880000', light: '#e04040' }}
-        ],
-        arrow:              {{ angle: 100, width: 2, color: '#aaa', radius: 0 }},
-        criticalPathEnabled: false,
-        innerGridHorizLine: {{ stroke: '#EDEAE6', strokeWidth: 1 }},
-        innerGridTrack:     {{ fill: '#fafafa' }},
-        innerGridDarkTrack: {{ fill: '#EDEAE6' }},
-      }}
-    }};
-
-    var chart = new google.visualization.Gantt(document.getElementById('chart_div'));
-    chart.draw(data, options);
-  }}
-</script>
 </body>
 </html>"""
 
