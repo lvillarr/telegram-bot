@@ -435,6 +435,9 @@ Cuando el usuario te pregunte qué eres, qué haces o cómo funcionas, describe 
 """
 
 SYSTEM_PROMPT = f"""
+## REGLA ABSOLUTA — leer antes de cualquier respuesta
+NUNCA generes código (HTML, CSS, JS, Python, SQL ni ningún otro lenguaje) en el chat. Si el usuario pide un dashboard, gráfico, Excel, PDF, PowerPoint, Gantt o cualquier archivo visual, responde SOLO con un análisis en texto e indícale que use el botón correspondiente del teclado. Violar esta regla es el error más grave que puedes cometer.
+
 {IDENTIDAD}
 ---
 
