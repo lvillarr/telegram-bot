@@ -9,3 +9,4 @@ pdfplumber
 python-docx
 python-pptx
 reportlab
+requests

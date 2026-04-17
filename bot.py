@@ -1708,31 +1708,32 @@ def build_pptx(data: dict) -> io.BytesIO:
 
 
 def send_email_outlook(data: dict) -> None:
-    """Envía un correo via SMTP de Gmail (smtp.gmail.com:587)."""
-    import smtplib
-    from email.mime.multipart import MIMEMultipart
-    from email.mime.text import MIMEText
+    """Envía un correo via SendGrid API."""
+    import requests
 
-    sender   = os.environ.get("GMAIL_EMAIL", "")
-    password = os.environ.get("GMAIL_PASSWORD", "")
-    if not sender or not password:
-        raise ValueError("Faltan variables de entorno GMAIL_EMAIL y/o GMAIL_PASSWORD.")
+    api_key     = os.environ.get("SENDGRID_API_KEY", "")
+    sender_email = os.environ.get("SENDER_EMAIL", "")
+    if not api_key or not sender_email:
+        raise ValueError("Faltan variables de entorno SENDGRID_API_KEY y/o SENDER_EMAIL.")
 
-    msg = MIMEMultipart("alternative")
-    msg["From"]    = sender
-    msg["To"]      = data["para"]
-    msg["Subject"] = data["asunto"]
+    to_list = [{"email": data["para"]}]
+    payload = {
+        "personalizations": [{"to": to_list}],
+        "from": {"email": sender_email},
+        "subject": data["asunto"],
+        "content": [{"type": "text/plain", "value": data["cuerpo"]}],
+    }
     if data.get("cc"):
-        msg["Cc"] = data["cc"]
+        payload["personalizations"][0]["cc"] = [{"email": data["cc"]}]
 
-    msg.attach(MIMEText(data["cuerpo"], "plain", "utf-8"))
-
-    recipients = [data["para"]] + ([data["cc"]] if data.get("cc") else [])
-    with smtplib.SMTP("smtp.gmail.com", 587) as server:
-        server.ehlo()
-        server.starttls()
-        server.login(sender, password)
-        server.sendmail(sender, recipients, msg.as_string())
+    resp = requests.post(
+        "https://api.sendgrid.com/v3/mail/send",
+        headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+        json=payload,
+        timeout=15,
+    )
+    if resp.status_code not in (200, 202):
+        raise ValueError(f"SendGrid error {resp.status_code}: {resp.text[:200]}")
 
 
 EMAIL_CONFIRM_KEYBOARD = InlineKeyboardMarkup([[
