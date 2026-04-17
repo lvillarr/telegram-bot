@@ -713,6 +713,110 @@ async def send_reply(update: Update, text: str, reply_markup=None):
             await update.message.reply_document(document=buf, filename=filename, caption=caption)
 
 
+# Mapa de palabras clave → tipo de artefacto
+_ARTIFACT_INTENT = {
+    "html":         ["dashboard", "html", "interactivo", "visualización", "visualizacion"],
+    "excel":        ["excel", "tabla", "spreadsheet", "hoja de cálculo", "hoja de calculo"],
+    "pdf":          ["pdf", "informe", "reporte", "report"],
+    "gantt":        ["gantt", "cronograma", "carta gantt", "timeline", "plan de proyecto"],
+    "pptx":         ["ppt", "pptx", "powerpoint", "presentación", "presentacion", "diapositiva"],
+    "email":        ["correo", "email", "mail", "envía un correo", "envia un correo"],
+}
+
+def _detect_artifact_intent(text: str) -> str | None:
+    lower = text.lower()
+    for artifact_type, keywords in _ARTIFACT_INTENT.items():
+        if any(kw in lower for kw in keywords):
+            return artifact_type
+    return None
+
+
+def _build_artifact_description(user_msg: str, context) -> str:
+    """Construye el bloque de descripción enriquecido con todo el contexto disponible."""
+    last_analysis   = context.user_data.get("last_analysis", "")
+    structured_data = context.user_data.get("structured_data", {})
+    doc_content     = context.user_data.get("doc_content", "")
+    doc_tipo        = context.user_data.get("doc_tipo", "")
+
+    base = user_msg or "Basado en el análisis previo"
+    if structured_data:
+        data_block = json.dumps(structured_data, ensure_ascii=False, default=str)
+        return (f"{base}\n\nDATOS EXACTOS DEL ARCHIVO {doc_tipo} (úsalos LITERALMENTE):\n{data_block[:8000]}")
+    elif doc_content:
+        return f"{base}\n\nCONTENIDO COMPLETO DEL ARCHIVO {doc_tipo}:\n{doc_content[:8000]}"
+    elif last_analysis:
+        return f"{base}\n\nContexto del análisis previo:\n{last_analysis}"
+    return base
+
+
+async def _render_artifact(artifact_type: str, description: str,
+                           reply_fn, context) -> None:
+    """Genera y envía un artefacto, luego muestra el teclado para generar otro."""
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000}
+    prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
+    raw = claude_response(prompt, description,
+                          max_tokens=_tokens_map.get(artifact_type, 4000),
+                          model="claude-sonnet-4-6")
+    try:
+        if artifact_type == "html":
+            html = raw.strip()
+            if html.startswith("```"):
+                html = html.split("\n", 1)[-1]
+            if html.endswith("```"):
+                html = html.rsplit("```", 1)[0]
+            html = html.strip()
+            if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
+                await reply_fn("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
+                return
+            url = store_html(html)
+            await reply_fn(f"🌲 <b>Dashboard interactivo listo</b>\n\nToca el enlace:\n{url}",
+                           parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD)
+            return
+        elif artifact_type == "excel":
+            data = extract_json(raw)
+            buf  = build_excel(data)
+            filename = f"arauco-{data.get('titulo','datos').lower().replace(' ','-')[:30]}.xlsx"
+            await reply_fn(buf=buf, filename=filename, caption="📊 Excel generado — Arauco Mejora Continua")
+        elif artifact_type == "pdf":
+            data  = extract_json(raw)
+            buf   = build_pdf(data)
+            titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
+            await reply_fn(buf=buf, filename=f"{titulo}.pdf", caption="📄 Informe PDF — Arauco Mejora Continua")
+        elif artifact_type == "gantt":
+            data  = extract_json(raw)
+            url   = build_gantt(data)
+            titulo = data.get("titulo", "Carta Gantt")
+            await reply_fn(f"📅 <b>{titulo}</b>\n\nToca el enlace:\n{url}",
+                           parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD)
+            return
+        elif artifact_type == "pptx":
+            data  = extract_json(raw)
+            buf   = build_pptx(data)
+            titulo = data.get("titulo", "presentacion-arauco").lower().replace(" ", "-")[:30]
+            await reply_fn(buf=buf, filename=f"{titulo}.pptx", caption="🖥️ PowerPoint generado — Arauco Mejora Continua")
+        elif artifact_type == "email":
+            data = extract_json(raw)
+            context.user_data["pending_email"] = data
+            context.user_data["waiting_email_recipient"] = True
+            await reply_fn("📧 Borrador listo. ¿A qué correo lo envío?")
+            return
+        # Para archivos (excel, pdf, pptx): muestra teclado en mensaje separado
+        await reply_fn("¿Generar otro artefacto?", reply_markup=ARTIFACT_KEYBOARD)
+    except (json.JSONDecodeError, ValueError) as e:
+        await reply_fn(f"⚠️ Error al parsear respuesta: {str(e)[:120]}\nInicio: {raw[:200]}")
+    except Exception as e:
+        await reply_fn(f"⚠️ Error generando artefacto: {str(e)[:200]}")
+
+
+def _make_reply_fn(message):
+    async def reply_fn(text=None, *, buf=None, filename=None, caption=None, **kwargs):
+        if buf is not None:
+            await message.reply_document(document=buf, filename=filename, caption=caption)
+        else:
+            await message.reply_text(text, **kwargs)
+    return reply_fn
+
+
 def _email_preview(data: dict) -> str:
     lines = [
         f"📧 <b>Borrador de correo</b>\n",
@@ -738,6 +842,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _email_preview(draft), parse_mode="HTML",
             reply_markup=EMAIL_CONFIRM_KEYBOARD
         )
+        return
+
+    # Detecta intención de artefacto y genera directamente usando todo el contexto disponible
+    artifact_intent = _detect_artifact_intent(user_msg)
+    if artifact_intent and artifact_intent in ARTIFACT_PROMPTS:
+        description = _build_artifact_description(user_msg, context)
+        await update.message.reply_text(f"⏳ Generando *{artifact_intent}*...", parse_mode="Markdown")
+        await _render_artifact(artifact_intent, description,
+                               _make_reply_fn(update.message), context)
         return
 
     try:
@@ -792,105 +905,8 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text(f"⏳ Generando *{artifact_type}*...", parse_mode="Markdown")
 
-    # Construye el bloque de datos para el artefacto HTML/Excel/Chart
-    # Funciona para CUALQUIER tipo de documento: PDF, Word o Excel
-    structured_data = context.user_data.get("structured_data", {})
-    doc_content     = context.user_data.get("doc_content", "")
-    doc_tipo        = context.user_data.get("doc_tipo", "")
-
-    if artifact_type == "html":
-        if structured_data:
-            # Excel → datos tabulares exactos disponibles
-            import json as _json
-            data_block = _json.dumps(structured_data, ensure_ascii=False, default=str)
-            description = (
-                f"Análisis del documento:\n\n{last_analysis}\n\n"
-                f"DATOS EXACTOS DEL ARCHIVO {doc_tipo} "
-                f"(úsalos LITERALMENTE en tablas y gráficos — no inventes valores):\n"
-                f"{data_block[:8000]}"
-            )
-        elif doc_content:
-            # PDF / Word → pasa el contenido raw para que Claude extraiga tablas
-            description = (
-                f"Análisis del documento:\n\n{last_analysis}\n\n"
-                f"CONTENIDO COMPLETO DEL ARCHIVO {doc_tipo} "
-                f"(extrae de aquí los datos para tablas y gráficos):\n"
-                f"{doc_content[:8000]}"
-            )
-        else:
-            description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
-    else:
-        description = f"Basado en este análisis forestal de Arauco:\n\n{last_analysis}"
-
-    artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000}
-    artifact_tokens = _tokens_map.get(artifact_type, 4000)
-    prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
-    raw = claude_response(prompt, description,
-                          max_tokens=artifact_tokens, model=artifact_model)
-
-    try:
-        if artifact_type == "html":
-            html = raw.strip()
-            if html.startswith("```"):
-                html = html.split("\n", 1)[-1]
-            if html.endswith("```"):
-                html = html.rsplit("```", 1)[0]
-            html = html.strip()
-            if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
-                await query.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
-                return
-            url = store_html(html)
-            await query.message.reply_text(
-                f"🌲 <b>Dashboard interactivo listo</b>\n\n"
-                f"Toca el enlace para abrirlo en tu browser:\n{url}",
-                parse_mode="HTML"
-            )
-        elif artifact_type == "excel":
-            data = extract_json(raw)
-            buf = build_excel(data)
-            filename = f"arauco-{data.get('titulo','datos').lower().replace(' ','-')[:30]}.xlsx"
-            await query.message.reply_document(
-                document=buf, filename=filename,
-                caption="📊 Excel generado con datos del análisis forestal"
-            )
-        elif artifact_type == "pdf":
-            data = extract_json(raw)
-            buf = build_pdf(data)
-            titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
-            await query.message.reply_document(
-                document=buf, filename=f"{titulo}.pdf",
-                caption="📄 Informe PDF generado — Arauco Mejora Continua"
-            )
-        elif artifact_type == "gantt":
-            data = extract_json(raw)
-            url = build_gantt(data)
-            titulo = data.get("titulo", "Carta Gantt")
-            await query.message.reply_text(
-                f"📅 <b>{titulo}</b>\n\n"
-                f'Toca el enlace para abrir en tu browser:\n{url}',
-                parse_mode="HTML"
-            )
-        elif artifact_type == "pptx":
-            data = extract_json(raw)
-            buf = build_pptx(data)
-            titulo = data.get("titulo", "presentacion-arauco").lower().replace(" ", "-")[:30]
-            await query.message.reply_document(
-                document=buf, filename=f"{titulo}.pptx",
-                caption="🖥️ Presentación PowerPoint generada — Arauco Mejora Continua"
-            )
-        elif artifact_type == "email":
-            data = extract_json(raw)
-            context.user_data["pending_email"] = data
-            context.user_data["waiting_email_recipient"] = True
-            await query.message.reply_text("📧 Borrador listo. ¿A qué correo lo envío?")
-    except (json.JSONDecodeError, ValueError) as e:
-        await query.message.reply_text(
-            f"⚠️ Error al parsear la respuesta del modelo: {str(e)[:120]}\n"
-            f"Respuesta recibida (inicio): {raw[:200]}"
-        )
-    except Exception as e:
-        await query.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
+    description = _build_artifact_description(last_analysis, context)
+    await _render_artifact(artifact_type, description, _make_reply_fn(query.message), context)
 
 
 async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1788,106 +1804,10 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    await update.message.reply_text(f"⏳ Generando artefacto *{artifact_type}*...", parse_mode="Markdown")
+    await update.message.reply_text(f"⏳ Generando *{artifact_type}*...", parse_mode="Markdown")
 
-    # Enriquecer description con datos del documento cargado (igual que artifact_callback)
-    if artifact_type in ("html", "pdf", "gantt", "pptx"):
-        structured_data = context.user_data.get("structured_data", {})
-        doc_content     = context.user_data.get("doc_content", "")
-        doc_tipo        = context.user_data.get("doc_tipo", "")
-        last_analysis   = context.user_data.get("last_analysis", "")
-
-        if structured_data:
-            data_block = json.dumps(structured_data, ensure_ascii=False, default=str)
-            description = (
-                f"{description}\n\n"
-                f"DATOS EXACTOS DEL ARCHIVO {doc_tipo} "
-                f"(úsalos LITERALMENTE en tablas y gráficos — no inventes valores):\n"
-                f"{data_block[:8000]}"
-            )
-        elif doc_content:
-            description = (
-                f"{description}\n\n"
-                f"CONTENIDO COMPLETO DEL ARCHIVO {doc_tipo} "
-                f"(extrae de aquí los datos para tablas y gráficos):\n"
-                f"{doc_content[:8000]}"
-            )
-        elif last_analysis:
-            description = f"{description}\n\nContexto del análisis previo:\n{last_analysis}"
-
-    artifact_model  = "claude-sonnet-4-6"
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000}
-    artifact_tokens = _tokens_map.get(artifact_type, 4000)
-    prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
-    raw = claude_response(prompt, description,
-                          max_tokens=artifact_tokens, model=artifact_model)
-
-    try:
-        if artifact_type == "html":
-            html = raw.strip()
-            if html.startswith("```"):
-                html = html.split("\n", 1)[-1]
-            if html.endswith("```"):
-                html = html.rsplit("```", 1)[0]
-            html = html.strip()
-            if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
-                await update.message.reply_text("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
-                return
-            url = store_html(html)
-            await update.message.reply_text(
-                f"🌲 <b>Dashboard interactivo listo</b>\n\n"
-                f"Toca el enlace para abrirlo en tu browser:\n{url}",
-                parse_mode="HTML"
-            )
-
-        elif artifact_type == "pdf":
-            data = extract_json(raw)
-            buf = build_pdf(data)
-            titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
-            await update.message.reply_document(
-                document=buf, filename=f"{titulo}.pdf",
-                caption="📄 Informe PDF generado — Arauco Mejora Continua"
-            )
-
-        elif artifact_type == "gantt":
-            data = extract_json(raw)
-            url = build_gantt(data)
-            titulo = data.get("titulo", "Carta Gantt")
-            await update.message.reply_text(
-                f"📅 <b>{titulo}</b>\n\n"
-                f'Toca el enlace para abrir en tu browser:\n{url}',
-                parse_mode="HTML"
-            )
-
-        elif artifact_type == "excel":
-            data = extract_json(raw)
-            buf = build_excel(data)
-            filename = f"arauco-{data.get('titulo', 'datos').lower().replace(' ', '-')[:30]}.xlsx"
-            await update.message.reply_document(document=buf, filename=filename,
-                                                caption="📊 Excel generado con datos del contexto forestal")
-
-        elif artifact_type == "pptx":
-            data = extract_json(raw)
-            buf = build_pptx(data)
-            titulo = data.get("titulo", "presentacion-arauco").lower().replace(" ", "-")[:30]
-            await update.message.reply_document(
-                document=buf, filename=f"{titulo}.pptx",
-                caption="🖥️ Presentación PowerPoint generada — Arauco Mejora Continua"
-            )
-
-        elif artifact_type == "email":
-            data = extract_json(raw)
-            context.user_data["pending_email"] = data
-            context.user_data["waiting_email_recipient"] = True
-            await update.message.reply_text("📧 Borrador listo. ¿A qué correo lo envío?")
-
-    except (json.JSONDecodeError, ValueError) as e:
-        await update.message.reply_text(
-            f"⚠️ Error al parsear respuesta del modelo: {str(e)[:120]}\n"
-            f"Inicio de respuesta: {raw[:200]}"
-        )
-    except Exception as e:
-        await update.message.reply_text(f"⚠️ Error generando el artefacto: {str(e)[:200]}")
+    description = _build_artifact_description(description, context)
+    await _render_artifact(artifact_type, description, _make_reply_fn(update.message), context)
 
 
 SUPPORTED_DOCS = {".pdf", ".docx", ".xlsx", ".pptx"}
