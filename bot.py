@@ -1708,15 +1708,15 @@ def build_pptx(data: dict) -> io.BytesIO:
 
 
 def send_email_outlook(data: dict) -> None:
-    """Envía un correo via SMTP de Outlook (smtp.office365.com:587)."""
+    """Envía un correo via SMTP de Gmail (smtp.gmail.com:587)."""
     import smtplib
     from email.mime.multipart import MIMEMultipart
     from email.mime.text import MIMEText
 
-    sender   = os.environ.get("OUTLOOK_EMAIL", "")
-    password = os.environ.get("OUTLOOK_PASSWORD", "")
+    sender   = os.environ.get("GMAIL_EMAIL", "")
+    password = os.environ.get("GMAIL_PASSWORD", "")
     if not sender or not password:
-        raise ValueError("Faltan variables de entorno OUTLOOK_EMAIL y/o OUTLOOK_PASSWORD.")
+        raise ValueError("Faltan variables de entorno GMAIL_EMAIL y/o GMAIL_PASSWORD.")
 
     msg = MIMEMultipart("alternative")
     msg["From"]    = sender
@@ -1728,7 +1728,7 @@ def send_email_outlook(data: dict) -> None:
     msg.attach(MIMEText(data["cuerpo"], "plain", "utf-8"))
 
     recipients = [data["para"]] + ([data["cc"]] if data.get("cc") else [])
-    with smtplib.SMTP("smtp.office365.com", 587) as server:
+    with smtplib.SMTP("smtp.gmail.com", 587) as server:
         server.ehlo()
         server.starttls()
         server.login(sender, password)
