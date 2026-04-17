@@ -1422,12 +1422,12 @@ def build_pdf(data: dict) -> io.BytesIO:
     )
 
     # Estilos
-    s_titulo  = ParagraphStyle("titulo",  fontName="Helvetica-Bold",   fontSize=18, textColor=GRIS,  spaceAfter=2*mm)
-    s_sub     = ParagraphStyle("sub",     fontName="Helvetica",        fontSize=10, textColor=GRIS_L, spaceAfter=6*mm)
-    s_meta    = ParagraphStyle("meta",    fontName="Helvetica",        fontSize=8,  textColor=GRIS_L, spaceAfter=2*mm)
-    s_seccion = ParagraphStyle("seccion", fontName="Helvetica-Bold",   fontSize=12, textColor=GRIS,  spaceBefore=6*mm, spaceAfter=3*mm, borderPad=2, leftIndent=4*mm)
-    s_body    = ParagraphStyle("body",    fontName="Helvetica",        fontSize=9,  textColor=NEGRO, leading=14, spaceAfter=3*mm)
-    s_concl   = ParagraphStyle("concl",   fontName="Helvetica-Oblique",fontSize=9,  textColor=NEGRO, leading=14, spaceAfter=3*mm)
+    s_titulo  = ParagraphStyle("titulo",  fontName="Helvetica-Bold",   fontSize=18, textColor=GRIS,  spaceAfter=4*mm)
+    s_sub     = ParagraphStyle("sub",     fontName="Helvetica",        fontSize=10, textColor=GRIS_L, spaceAfter=8*mm)
+    s_meta    = ParagraphStyle("meta",    fontName="Helvetica",        fontSize=8,  textColor=GRIS_L, spaceAfter=4*mm)
+    s_seccion = ParagraphStyle("seccion", fontName="Helvetica-Bold",   fontSize=12, textColor=GRIS,  spaceBefore=8*mm, spaceAfter=4*mm, borderPad=2, leftIndent=4*mm)
+    s_body    = ParagraphStyle("body",    fontName="Helvetica",        fontSize=9,  textColor=NEGRO, leading=16, spaceAfter=5*mm)
+    s_concl   = ParagraphStyle("concl",   fontName="Helvetica-Oblique",fontSize=9,  textColor=NEGRO, leading=16, spaceAfter=5*mm)
     s_footer  = ParagraphStyle("footer",  fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER)
     s_kpi_val = ParagraphStyle("kpi_val", fontName="Helvetica-Bold",   fontSize=16, textColor=GRIS,  alignment=TA_CENTER, leading=18)
     s_kpi_lbl = ParagraphStyle("kpi_lbl", fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER, spaceAfter=0)
