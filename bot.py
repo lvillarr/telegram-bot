@@ -962,7 +962,7 @@ HEAD obligatorio:
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 ESTRUCTURA:
-1. Header — .dashboard-header con .dashboard-title y .dashboard-subtitle (fuente + fecha)
+1. Header — .dashboard-header con logo `<img src="https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png" alt="Arauco" height="32" style="margin-right:16px">` + .dashboard-title + .dashboard-subtitle (fuente + fecha)
 2. KPI cards — .grid.grid-4, mínimo 4, con .kpi-label / .kpi-value / .kpi-change (.positive/.negative/.neutral)
 3. Filtros — .filtros-bar con <select id="f-COL"> por columna categórica + .btn-limpiar + .conteo-badge
 4. <script> completo con: const DATOS=[...], const FILTROS_COLS=[...], const charts={}, funciones aplicarFiltros() / renderTabla() / actualizarGraficos() / limpiarFiltros(), inicialización en DOMContentLoaded
