@@ -731,17 +731,42 @@ def _detect_artifact_intent(text: str) -> str | None:
     return None
 
 
+def _user_msg_has_description(user_msg: str) -> bool:
+    """True si el mensaje contiene una descripción propia más allá del keyword del artefacto."""
+    lower = user_msg.lower()
+    # Quitar keywords de artefactos y palabras de comando genéricas
+    stopwords = ["haz", "hacer", "genera", "generar", "crea", "crear", "dame", "quiero",
+                 "un", "una", "el", "la", "por", "favor", "porfavor", "please",
+                 "html", "excel", "pdf", "gantt", "pptx", "ppt", "email", "dashboard",
+                 "informe", "reporte", "presentación", "presentacion", "tabla", "correo"]
+    tokens = [t for t in lower.split() if t not in stopwords]
+    return len(tokens) >= 3  # hay descripción real si quedan ≥3 palabras significativas
+
+
 def _build_artifact_description(user_msg: str, context) -> str:
-    """Construye el bloque de descripción enriquecido con todo el contexto disponible."""
+    """Construye la descripción para el artefacto.
+
+    Si el usuario escribió una descripción propia (más allá del keyword),
+    la usa sin inyectar el documento — el usuario está pidiendo algo diferente.
+    Si solo presionó un botón o usó un keyword simple, enriquece con el contexto del doc.
+    """
     last_analysis   = context.user_data.get("last_analysis", "")
     structured_data = context.user_data.get("structured_data", {})
     doc_content     = context.user_data.get("doc_content", "")
     doc_tipo        = context.user_data.get("doc_tipo", "")
 
     base = user_msg or "Basado en el análisis previo"
+
+    # Si el usuario describió algo específico, no forzar el doc anterior
+    if user_msg and _user_msg_has_description(user_msg):
+        if last_analysis:
+            return f"{base}\n\nContexto del análisis previo:\n{last_analysis}"
+        return base
+
+    # Sin descripción propia (botón o keyword simple): usa el doc/análisis completo
     if structured_data:
         data_block = json.dumps(structured_data, ensure_ascii=False, default=str)
-        return (f"{base}\n\nDATOS EXACTOS DEL ARCHIVO {doc_tipo} (úsalos LITERALMENTE):\n{data_block[:8000]}")
+        return f"{base}\n\nDATOS EXACTOS DEL ARCHIVO {doc_tipo} (úsalos LITERALMENTE):\n{data_block[:8000]}"
     elif doc_content:
         return f"{base}\n\nCONTENIDO COMPLETO DEL ARCHIVO {doc_tipo}:\n{doc_content[:8000]}"
     elif last_analysis:
