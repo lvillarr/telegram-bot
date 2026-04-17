@@ -707,8 +707,33 @@ async def send_reply(update: Update, text: str, reply_markup=None):
             await update.message.reply_document(document=buf, filename=filename, caption=caption)
 
 
+def _email_preview(data: dict) -> str:
+    lines = [
+        f"📧 <b>Borrador de correo</b>\n",
+        f"<b>Para:</b> {_html.escape(data.get('para', ''))}",
+    ]
+    if data.get("cc"):
+        lines.append(f"<b>CC:</b> {_html.escape(data['cc'])}")
+    lines.append(f"<b>Asunto:</b> {_html.escape(data.get('asunto', ''))}\n")
+    lines.append(_html.escape(data.get("cuerpo", "")))
+    return "\n".join(lines)
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
+
+    # Intercepta respuesta con destinatario de email
+    if context.user_data.get("waiting_email_recipient"):
+        context.user_data.pop("waiting_email_recipient")
+        draft = context.user_data.get("pending_email", {})
+        draft["para"] = user_msg.strip()
+        context.user_data["pending_email"] = draft
+        await update.message.reply_text(
+            _email_preview(draft), parse_mode="HTML",
+            reply_markup=EMAIL_CONFIRM_KEYBOARD
+        )
+        return
+
     try:
         history    = context.user_data.get("history", [])
         rag_ctx    = rag.build_context(user_msg)
@@ -851,15 +876,8 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif artifact_type == "email":
             data = extract_json(raw)
             context.user_data["pending_email"] = data
-            preview = (
-                f"📧 <b>Borrador de correo</b>\n\n"
-                f"<b>Para:</b> {_html.escape(data.get('para',''))}\n"
-                + (f"<b>CC:</b> {_html.escape(data.get('cc',''))}\n" if data.get('cc') else "")
-                + f"<b>Asunto:</b> {_html.escape(data.get('asunto',''))}\n\n"
-                f"{_html.escape(data.get('cuerpo',''))}"
-            )
-            await query.message.reply_text(preview, parse_mode="HTML",
-                                           reply_markup=EMAIL_CONFIRM_KEYBOARD)
+            context.user_data["waiting_email_recipient"] = True
+            await query.message.reply_text("📧 Borrador listo. ¿A qué correo lo envío?")
     except (json.JSONDecodeError, ValueError) as e:
         await query.message.reply_text(
             f"⚠️ Error al parsear la respuesta del modelo: {str(e)[:120]}\n"
@@ -1854,15 +1872,8 @@ async def artifact_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif artifact_type == "email":
             data = extract_json(raw)
             context.user_data["pending_email"] = data
-            preview = (
-                f"📧 <b>Borrador de correo</b>\n\n"
-                f"<b>Para:</b> {_html.escape(data.get('para',''))}\n"
-                + (f"<b>CC:</b> {_html.escape(data.get('cc',''))}\n" if data.get('cc') else "")
-                + f"<b>Asunto:</b> {_html.escape(data.get('asunto',''))}\n\n"
-                f"{_html.escape(data.get('cuerpo',''))}"
-            )
-            await update.message.reply_text(preview, parse_mode="HTML",
-                                            reply_markup=EMAIL_CONFIRM_KEYBOARD)
+            context.user_data["waiting_email_recipient"] = True
+            await update.message.reply_text("📧 Borrador listo. ¿A qué correo lo envío?")
 
     except (json.JSONDecodeError, ValueError) as e:
         await update.message.reply_text(
