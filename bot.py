@@ -857,6 +857,18 @@ def _email_preview(data: dict) -> str:
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
 
+    # Intercepta edición de campo del email
+    if context.user_data.get("editing_email_field"):
+        campo = context.user_data.pop("editing_email_field")
+        draft = context.user_data.get("pending_email", {})
+        draft[campo] = user_msg.strip()
+        context.user_data["pending_email"] = draft
+        await update.message.reply_text(
+            _email_preview(draft), parse_mode="HTML",
+            reply_markup=EMAIL_CONFIRM_KEYBOARD
+        )
+        return
+
     # Intercepta respuesta con destinatario de email
     if context.user_data.get("waiting_email_recipient"):
         context.user_data.pop("waiting_email_recipient")
@@ -1803,7 +1815,14 @@ def send_email_outlook(data: dict) -> None:
 
 EMAIL_CONFIRM_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("✅ Enviar",   callback_data="email_confirm"),
+    InlineKeyboardButton("✏️ Editar",   callback_data="email_edit"),
     InlineKeyboardButton("❌ Cancelar", callback_data="email_cancel"),
+]])
+
+EMAIL_EDIT_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("👤 Destinatario", callback_data="email_edit_para"),
+    InlineKeyboardButton("📌 Asunto",       callback_data="email_edit_asunto"),
+    InlineKeyboardButton("📝 Cuerpo",       callback_data="email_edit_cuerpo"),
 ]])
 
 
@@ -2190,6 +2209,17 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         context.user_data.pop("pending_email", None)
         return
 
+    if query.data == "email_edit":
+        await query.message.reply_text("¿Qué quieres editar?", reply_markup=EMAIL_EDIT_KEYBOARD)
+        return
+
+    if query.data.startswith("email_edit_"):
+        campo = query.data.replace("email_edit_", "")
+        labels = {"para": "destinatario", "asunto": "asunto", "cuerpo": "cuerpo del correo"}
+        context.user_data["editing_email_field"] = campo
+        await query.message.reply_text(f"Escribe el nuevo {labels[campo]}:")
+        return
+
     data = context.user_data.get("pending_email")
     if not data:
         await query.message.reply_text("⚠️ No hay correo pendiente.")
@@ -2380,7 +2410,7 @@ app.add_handler(CommandHandler("documentos", documentos_handler))
 app.add_handler(CommandHandler("buscar",     buscar_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
 app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
-app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel)$"))
+app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel|edit.*)$"))
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
