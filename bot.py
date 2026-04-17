@@ -15,7 +15,7 @@ import pdfplumber
 from collections import OrderedDict
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from docx import Document as DocxDocument
-from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters
+from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters, PicklePersistence
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 import html as _html
 from telegram.ext import ContextTypes
@@ -905,7 +905,7 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text(f"⏳ Generando *{artifact_type}*...", parse_mode="Markdown")
 
-    description = _build_artifact_description(last_analysis, context)
+    description = _build_artifact_description("", context)
     await _render_artifact(artifact_type, description, _make_reply_fn(query.message), context)
 
 
@@ -2342,6 +2342,7 @@ async def post_init(application):
 app = (
     ApplicationBuilder()
     .token(os.environ["TELEGRAM_TOKEN"])
+    .persistence(PicklePersistence(filepath="/tmp/bot_persistence"))
     .post_init(post_init)
     .build()
 )
