@@ -726,8 +726,9 @@ _ARTIFACT_INTENT = {
 def _detect_artifact_intent(text: str) -> str | None:
     lower = text.lower()
     for artifact_type, keywords in _ARTIFACT_INTENT.items():
-        if any(kw in lower for kw in keywords):
-            return artifact_type
+        for kw in keywords:
+            if re.search(r'\b' + re.escape(kw) + r'\b', lower):
+                return artifact_type
     return None
 
 
@@ -757,10 +758,8 @@ def _build_artifact_description(user_msg: str, context) -> str:
 
     base = user_msg or "Basado en el análisis previo"
 
-    # Si el usuario describió algo específico, no forzar el doc anterior
+    # Si el usuario describió algo específico, usar solo su descripción — sin heredar contexto anterior
     if user_msg and _user_msg_has_description(user_msg):
-        if last_analysis:
-            return f"{base}\n\nContexto del análisis previo:\n{last_analysis}"
         return base
 
     # Sin descripción propia (botón o keyword simple): usa el doc/análisis completo
