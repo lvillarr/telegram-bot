@@ -427,6 +427,12 @@ if os.path.exists(_planner_path):
     with open(_planner_path, encoding="utf-8") as _f:
         _PLANNER_HTML = _f.read()
 
+_PLANNER_MOBILE_HTML = ""
+_planner_mobile_path = "templates/planner_mc_mobile.html"
+if os.path.exists(_planner_mobile_path):
+    with open(_planner_mobile_path, encoding="utf-8") as _f:
+        _PLANNER_MOBILE_HTML = _f.read()
+
 IDENTIDAD = """
 # Identidad del sistema — leer antes de responder cualquier pregunta sobre quién eres
 
@@ -583,7 +589,8 @@ ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("🌐 HTML",   callback_data="art_html"),
     InlineKeyboardButton("📧 Email",  callback_data="art_email"),
 ], [
-    InlineKeyboardButton("📋 Planner MC", callback_data="art_planner"),
+    InlineKeyboardButton("📋 Planner MC",     callback_data="art_planner"),
+    InlineKeyboardButton("📱 Planner Mobile", callback_data="art_planner_mobile"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
@@ -730,7 +737,8 @@ _ARTIFACT_INTENT = {
     "gantt":        ["gantt", "cronograma", "carta gantt", "timeline", "plan de proyecto"],
     "pptx":         ["ppt", "pptx", "powerpoint", "presentación", "presentacion", "diapositiva"],
     "email":        ["envía un correo", "envia un correo", "manda un correo", "redacta un correo", "escribe un correo"],
-    "planner":      ["planner mc", "dashboard planner", "tablero mc", "dashboard mc"],
+    "planner":        ["planner mc", "dashboard planner", "tablero mc", "dashboard mc"],
+    "planner_mobile": ["planner mobile", "planner celular", "dashboard mobile", "tablero mobile"],
 }
 
 def _detect_artifact_intent(text: str) -> str | None:
@@ -786,7 +794,7 @@ def _build_artifact_description(user_msg: str, context) -> str:
 async def _render_artifact(artifact_type: str, description: str,
                            reply_fn, context) -> None:
     """Genera y envía un artefacto, luego muestra el teclado para generar otro."""
-    # Planner MC: HTML estático, sin llamada a Claude
+    # Planner MC desktop: HTML estático, sin llamada a Claude
     if artifact_type == "planner":
         if not _PLANNER_HTML:
             await reply_fn("⚠️ Dashboard Planner no disponible en este entorno.")
@@ -794,6 +802,18 @@ async def _render_artifact(artifact_type: str, description: str,
         url = store_html(_PLANNER_HTML)
         await reply_fn(
             f"📋 <b>Dashboard Planner MC listo</b>\n\nToca el enlace para abrirlo:\n{url}",
+            parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD
+        )
+        return
+
+    # Planner MC mobile: versión optimizada para celular
+    if artifact_type == "planner_mobile":
+        if not _PLANNER_MOBILE_HTML:
+            await reply_fn("⚠️ Dashboard Mobile no disponible en este entorno.")
+            return
+        url = store_html(_PLANNER_MOBILE_HTML)
+        await reply_fn(
+            f"📱 <b>Planner MC Mobile listo</b>\n\nToca el enlace para abrirlo en tu celular:\n{url}",
             parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD
         )
         return
@@ -1011,7 +1031,8 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo y lo envía aquí
 `/artifact email resumen análisis para juan@arauco.com`"""
 
 ARTIFACT_PROMPTS = {
-    "planner": "",  # HTML estático — manejado en _render_artifact directamente
+    "planner":        "",  # HTML estático desktop
+    "planner_mobile": "",  # HTML estático mobile
     "html": """Eres el Agente DA de Arauco — Subgerencia de Mejora Continua.
 Genera un dashboard HTML interactivo y autocontenido.
 

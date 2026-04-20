@@ -1,0 +1,721 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>Mejora Continua</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#f0f1f5; --card:#fff; --border:#e3e5ed; --text:#111827;
+  --muted:#6b7280; --subtle:#f8f9fc; --r:12px;
+  --sh:0 1px 4px rgba(0,0,0,.07);
+  --font:'DM Sans',system-ui,sans-serif;
+  --eo:#059669; --eo-l:#ecfdf5; --eo-d:#064e3b;
+  --td:#2563eb; --td-l:#eff6ff; --td-d:#1e3a8a;
+  --ai:#7c3aed; --ai-l:#f5f3ff; --ai-d:#3b0764;
+  --id:#0891b2; --id-l:#ecfeff; --id-d:#164e63;
+  --im:#d97706; --im-l:#fffbeb; --im-d:#78350f;
+  --nav-h:64px; --hdr-h:56px;
+  --safe-b:env(safe-area-inset-bottom,0px);
+}
+html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--text);font-size:14px;line-height:1.5;overflow:hidden}
+
+/* ── HEADER ─────────────────────────────── */
+.hdr{position:fixed;top:0;left:0;right:0;height:var(--hdr-h);background:#0f1124;display:flex;align-items:center;padding:0 16px;gap:10px;z-index:100;padding-top:env(safe-area-inset-top,0px)}
+.hdr-icon{width:32px;height:32px;border-radius:8px;background:linear-gradient(135deg,#6366f1,#8b5cf6);display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.hdr-icon svg{width:17px;height:17px}
+.hdr-text{flex:1;min-width:0}
+.hdr-name{font-size:14px;font-weight:700;color:#fff;letter-spacing:-.2px}
+.hdr-sub{font-size:11px;color:rgba(255,255,255,.45);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hdr-date{font-size:11px;color:rgba(255,255,255,.35);font-variant-numeric:tabular-nums;white-space:nowrap}
+.hdr-upload{width:36px;height:36px;border-radius:10px;border:1.5px solid rgba(255,255,255,.15);background:rgba(255,255,255,.08);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+.hdr-upload svg{width:16px;height:16px;color:#fff}
+
+/* ── SCROLL CONTENT ─────────────────────── */
+.content{position:fixed;top:var(--hdr-h);left:0;right:0;bottom:calc(var(--nav-h) + var(--safe-b));overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch}
+.content::-webkit-scrollbar{display:none}
+
+/* ── BOTTOM NAV ─────────────────────────── */
+.bnav{position:fixed;bottom:0;left:0;right:0;height:calc(var(--nav-h) + var(--safe-b));background:#fff;border-top:1px solid var(--border);display:flex;align-items:flex-start;padding-top:6px;padding-bottom:var(--safe-b);z-index:100}
+.bnav-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;cursor:pointer;border:none;background:none;font-family:var(--font);padding:4px 2px;-webkit-tap-highlight-color:transparent;min-height:44px}
+.bnav-ico{font-size:20px;line-height:1;transition:transform .15s}
+.bnav-lbl{font-size:10.5px;font-weight:600;color:var(--muted);letter-spacing:-.2px}
+.bnav-item.on .bnav-lbl{color:#4f46e5}
+.bnav-item.on .bnav-ico{transform:translateY(-1px)}
+.bnav-dot{width:5px;height:5px;border-radius:50%;background:#ef4444;position:absolute;top:3px;right:calc(50% - 16px);display:none}
+.bnav-dot.on{display:block}
+
+/* ── VIEWS ───────────────────────────────── */
+.view{display:none;padding:16px 14px 20px}
+.view.on{display:block}
+
+/* ── KPI ROW ─────────────────────────────── */
+.kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px}
+.kpi-wide{grid-column:1/-1}
+.kpi{background:var(--card);border-radius:var(--r);padding:13px 14px;position:relative;overflow:hidden;box-shadow:var(--sh)}
+.kpi::before{content:'';position:absolute;top:0;left:0;right:0;height:3px}
+.kpi.k-total::before{background:linear-gradient(90deg,#6366f1,#8b5cf6)}
+.kpi.k-eo::before{background:var(--eo)}
+.kpi.k-td::before{background:var(--td)}
+.kpi.k-ai::before{background:var(--ai)}
+.kpi.k-late::before{background:#ef4444}
+.kpi-lbl{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);margin-bottom:5px}
+.kpi-val{font-size:30px;font-weight:700;letter-spacing:-1.5px;color:var(--text);line-height:1}
+.kpi-sub{font-size:11px;color:var(--muted);margin-top:3px;line-height:1.35}
+.kpi-bar{height:3px;background:#e5e7eb;border-radius:2px;margin-top:8px;overflow:hidden}
+.kpi-fill{height:100%;border-radius:2px;transition:width .6s}
+.kpi-wide .kpi-val{font-size:22px}
+
+/* ── SECTION TITLE ───────────────────────── */
+.sec-ttl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);margin-bottom:10px;display:flex;align-items:center;gap:8px}
+.sec-ttl::after{content:'';flex:1;height:1px;background:var(--border)}
+
+/* ── AREA CARDS ──────────────────────────── */
+.area-card{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh);margin-bottom:10px}
+.area-card-head{padding:14px;display:flex;align-items:center;gap:12px}
+.area-icon{width:42px;height:42px;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;flex-shrink:0}
+.area-name{font-size:14px;font-weight:700}
+.area-desc{font-size:11px;color:var(--muted);margin-top:1px}
+.area-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:0;border-top:1px solid var(--border)}
+.astat{padding:10px 0;text-align:center;border-right:1px solid var(--border)}
+.astat:last-child{border-right:none}
+.astat-v{font-size:18px;font-weight:700;letter-spacing:-.5px}
+.astat-l{font-size:9.5px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.3px}
+.area-prog-bar{height:4px;background:#e5e7eb;overflow:hidden}
+.area-prog-fill{height:100%;transition:width .6s}
+.area-actions{display:flex;border-top:1px solid var(--border)}
+.area-btn{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:11px 8px;font-size:12px;font-weight:600;cursor:pointer;background:none;border:none;font-family:var(--font);-webkit-tap-highlight-color:transparent}
+.area-btn:first-child{border-right:1px solid var(--border)}
+.area-btn svg{width:13px;height:13px}
+.area-btn.upload-btn{color:var(--muted)}
+.area-btn.upload-btn.loaded{color:var(--eo)}
+.area-btn.drill-btn{color:#4f46e5}
+
+/* ── PLANNER VIEW ────────────────────────── */
+.plan-search{display:flex;align-items:center;gap:8px;background:#fff;border-radius:10px;border:1px solid var(--border);padding:10px 13px;margin-bottom:10px;box-shadow:var(--sh)}
+.plan-search svg{width:14px;height:14px;color:var(--muted);flex-shrink:0}
+.plan-search input{border:none;background:none;font-size:14px;font-family:var(--font);color:var(--text);outline:none;width:100%}
+.chips-scroll{display:flex;gap:6px;overflow-x:auto;padding-bottom:2px;margin-bottom:12px;scrollbar-width:none}
+.chips-scroll::-webkit-scrollbar{display:none}
+.chip{white-space:nowrap;font-size:11.5px;font-weight:700;padding:5px 12px;border-radius:20px;cursor:pointer;border:2px solid transparent;-webkit-tap-highlight-color:transparent;flex-shrink:0}
+.chip.on{border-color:rgba(0,0,0,.25)}
+.plan-info{font-size:11px;color:var(--muted);margin-bottom:12px}
+
+/* STATUS GROUPS */
+.sgroup{margin-bottom:8px;background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+.sgroup-head{display:flex;align-items:center;gap:10px;padding:11px 14px;cursor:pointer;user-select:none;-webkit-tap-highlight-color:transparent}
+.sgroup-color{width:10px;height:10px;border-radius:3px;flex-shrink:0}
+.sgroup-name{font-size:13px;font-weight:700;flex:1}
+.sgroup-cnt{font-size:11px;font-weight:700;background:rgba(0,0,0,.06);border-radius:6px;padding:1px 8px;color:var(--muted)}
+.sgroup-chevron{font-size:11px;color:var(--muted);transition:transform .2s}
+.sgroup.open .sgroup-chevron{transform:rotate(90deg)}
+.sgroup-body{display:none;border-top:1px solid var(--border)}
+.sgroup.open .sgroup-body{display:block}
+.task-row{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid #f3f4f8;-webkit-tap-highlight-color:transparent}
+.task-row:last-child{border-bottom:none}
+.task-chk{width:18px;height:18px;border-radius:50%;border:2px solid #d1d5db;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center}
+.task-chk.ck{border-color:#10b981;background:#10b981}
+.task-chk.ck::after{content:'';width:7px;height:4px;border-left:2px solid #fff;border-bottom:2px solid #fff;transform:rotate(-45deg) translateY(-1px);display:block}
+.task-body{flex:1;min-width:0}
+.task-name{font-size:13px;line-height:1.4;font-weight:500}
+.task-name.done{text-decoration:line-through;color:var(--muted)}
+.task-tags{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+.tag{font-size:10px;font-weight:700;padding:2px 7px;border-radius:3px}
+.task-meta{display:flex;align-items:center;gap:8px;margin-top:5px;flex-wrap:wrap}
+.dp{display:inline-flex;align-items:center;gap:3px;font-size:11px;font-weight:600;padding:2px 7px;border-radius:4px}
+.dp.ok{background:#f0fdf4;color:#166534}
+.dp.late{background:#fef2f2;color:#991b1b}
+.dp.near{background:#fef3c7;color:#92400e}
+.dp svg{width:10px;height:10px}
+.task-assign{font-size:11px;color:var(--muted)}
+.task-pct{font-size:11px;color:var(--muted)}
+.task-pbar{height:3px;background:#e5e7eb;border-radius:2px;margin-top:5px;overflow:hidden}
+.task-pfill{height:100%;border-radius:2px}
+.task-row.wk{background:#fafbff}
+.wk-tag{font-size:10px;font-weight:700;background:#dbeafe;color:#1e40af;padding:2px 7px;border-radius:3px}
+
+/* ── ALERTS VIEW ─────────────────────────── */
+.alert-section{margin-bottom:14px}
+.alert-card{background:var(--card);border-radius:var(--r);overflow:hidden;box-shadow:var(--sh)}
+.alert-head{padding:13px 14px;font-size:13px;font-weight:700;display:flex;align-items:center;gap:7px;border-bottom:1px solid var(--border)}
+.alert-head svg{width:15px;height:15px;flex-shrink:0}
+.alert-item{display:flex;align-items:flex-start;gap:10px;padding:11px 14px;border-bottom:1px solid #f3f4f8}
+.alert-item:last-child{border-bottom:none}
+.alert-ico{width:32px;height:32px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.alert-name{font-size:13px;font-weight:600}
+.alert-area{font-size:11px;color:var(--muted);margin-top:1px}
+.alert-due{font-size:11px;font-weight:700;margin-top:3px}
+.alert-empty{padding:20px;text-align:center;font-size:12px;color:var(--muted)}
+.week-strip{width:4px;border-radius:2px;align-self:stretch;flex-shrink:0}
+.week-name{font-size:13px;font-weight:500;line-height:1.4}
+.week-meta{font-size:11px;color:var(--muted);margin-top:2px;display:flex;gap:6px;flex-wrap:wrap}
+
+/* ── MODAL ───────────────────────────────── */
+.overlay{position:fixed;inset:0;background:rgba(10,12,30,.55);z-index:200;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(3px)}
+.overlay.on{display:flex}
+.modal{background:#fff;border-radius:16px 16px 0 0;padding:20px 20px calc(20px + var(--safe-b));width:100%;max-height:88vh;overflow-y:auto}
+.modal-handle{width:36px;height:4px;border-radius:2px;background:#d1d5db;margin:0 auto 16px}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:4px}
+.modal p{font-size:13px;color:#6b7280;margin-bottom:14px;line-height:1.55}
+.dz{border:2px dashed var(--border);border-radius:10px;padding:28px 16px;text-align:center;cursor:pointer;background:var(--subtle)}
+.dz:active,.dz.drag{border-color:#6366f1;background:#f0f1ff}
+.dz svg{width:36px;height:36px;color:#9ca3af;margin-bottom:8px}
+.dz-t{font-size:14px;font-weight:600;margin-bottom:2px}
+.dz-s{font-size:12px;color:var(--muted)}
+.dz input{display:none}
+.area-selector{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.area-sel-btn{padding:12px;border-radius:10px;border:2px solid var(--border);background:#fff;font-size:13px;font-weight:600;font-family:var(--font);cursor:pointer;display:flex;align-items:center;gap:8px;-webkit-tap-highlight-color:transparent}
+.area-sel-btn.sel{border-color:#6366f1;background:#f0f1ff;color:#4f46e5}
+.area-sel-icon{font-size:18px}
+.mfoot{display:flex;gap:8px;margin-top:14px}
+.mbtn{flex:1;padding:12px;border-radius:10px;border:1px solid var(--border);background:#fff;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;-webkit-tap-highlight-color:transparent}
+.mbtn.pri{background:#0f1124;color:#fff;border-color:#0f1124}
+
+/* ── TOAST ───────────────────────────────── */
+.toast{position:fixed;bottom:calc(var(--nav-h) + var(--safe-b) + 12px);left:50%;transform:translateX(-50%);background:#0f1124;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:300;opacity:0;pointer-events:none;transition:opacity .25s;white-space:nowrap;display:flex;align-items:center;gap:7px}
+.toast.on{opacity:1}
+
+/* ── EMPTY STATE ─────────────────────────── */
+.empty{display:flex;flex-direction:column;align-items:center;padding:40px 20px;gap:8px;text-align:center}
+.empty svg{width:44px;height:44px;opacity:.25}
+.empty h4{font-size:15px;font-weight:700}
+.empty p{font-size:13px;color:var(--muted);line-height:1.55;max-width:260px}
+.empty-btn{margin-top:4px;padding:11px 22px;border-radius:10px;background:#0f1124;color:#fff;border:none;font-size:14px;font-weight:600;font-family:var(--font);cursor:pointer;-webkit-tap-highlight-color:transparent}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <div class="hdr-icon">
+    <svg viewBox="0 0 20 20" fill="none"><path d="M10 2L3 7v6l7 5 7-5V7L10 2z" stroke="white" stroke-width="1.5" stroke-linejoin="round"/><path d="M10 7v6M7 9l3-2 3 2" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  </div>
+  <div class="hdr-text">
+    <div class="hdr-name">Mejora Continua</div>
+    <div class="hdr-sub" id="hdr-sub">Vista Ejecutiva</div>
+  </div>
+  <div class="hdr-date" id="hdr-date"></div>
+  <div class="hdr-upload" onclick="openModal()">
+    <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+  </div>
+</header>
+
+<!-- SCROLL CONTENT -->
+<div class="content">
+
+  <!-- ── EXEC VIEW ── -->
+  <div id="view-exec" class="view on">
+    <div class="kpi-grid">
+      <div class="kpi k-total kpi-wide">
+        <div class="kpi-lbl">Total tareas</div>
+        <div style="display:flex;align-items:baseline;gap:12px">
+          <div class="kpi-val" id="kpi-total">—</div>
+          <div class="kpi-sub" id="kpi-total-sub" style="margin-top:0">Carga los Excel para activar</div>
+        </div>
+        <div class="kpi-bar"><div class="kpi-fill" id="kbar-total" style="width:0%;background:linear-gradient(90deg,#6366f1,#8b5cf6)"></div></div>
+      </div>
+      <div class="kpi k-eo">
+        <div class="kpi-lbl">Exc. Operacional</div>
+        <div class="kpi-val" id="kpi-eo">—</div>
+        <div class="kpi-sub" id="kpi-eo-sub">sin datos</div>
+        <div class="kpi-bar"><div class="kpi-fill" id="kbar-eo" style="width:0%;background:var(--eo)"></div></div>
+      </div>
+      <div class="kpi k-td">
+        <div class="kpi-lbl">Transf. Digital</div>
+        <div class="kpi-val" id="kpi-td">—</div>
+        <div class="kpi-sub" id="kpi-td-sub">sin datos</div>
+        <div class="kpi-bar"><div class="kpi-fill" id="kbar-td" style="width:0%;background:var(--td)"></div></div>
+      </div>
+      <div class="kpi k-ai">
+        <div class="kpi-lbl">Intel. Artificial</div>
+        <div class="kpi-val" id="kpi-ai">—</div>
+        <div class="kpi-sub" id="kpi-ai-sub">sin datos</div>
+        <div class="kpi-bar"><div class="kpi-fill" id="kbar-ai" style="width:0%;background:var(--ai)"></div></div>
+      </div>
+      <div class="kpi k-late">
+        <div class="kpi-lbl">Vencidas</div>
+        <div class="kpi-val" id="kpi-late" style="color:#ef4444">—</div>
+        <div class="kpi-sub" id="kpi-late-sub">sin datos</div>
+        <div class="kpi-bar"><div class="kpi-fill" id="kbar-late" style="width:0%;background:#ef4444"></div></div>
+      </div>
+    </div>
+
+    <div class="sec-ttl">Estado por área</div>
+
+    <!-- EO -->
+    <div class="area-card" id="acard-eo">
+      <div class="area-card-head">
+        <div class="area-icon" style="background:var(--eo-l)">🏭</div>
+        <div>
+          <div class="area-name" style="color:var(--eo-d)">Excelencia Operacional</div>
+          <div class="area-desc">Lean · SGL · Estándares operativos</div>
+        </div>
+      </div>
+      <div id="astats-eo"><div class="alert-empty">Sin datos — carga el Excel</div></div>
+      <div class="area-actions">
+        <button class="area-btn upload-btn" id="abtn-eo" onclick="openModalFor('eo')">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+          <span id="abtntxt-eo">Cargar Excel</span>
+        </button>
+        <button class="area-btn drill-btn" onclick="navToArea('eo')">Ver tablero →</button>
+      </div>
+    </div>
+
+    <!-- TD -->
+    <div class="area-card" id="acard-td">
+      <div class="area-card-head">
+        <div class="area-icon" style="background:var(--td-l)">💻</div>
+        <div>
+          <div class="area-name" style="color:var(--td-d)">Transformación Digital</div>
+          <div class="area-desc">NOM · Plan. Forestal · Telemetría</div>
+        </div>
+      </div>
+      <div id="astats-td"><div class="alert-empty">Sin datos — carga el Excel</div></div>
+      <div class="area-actions">
+        <button class="area-btn upload-btn" id="abtn-td" onclick="openModalFor('td')">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+          <span id="abtntxt-td">Cargar Excel</span>
+        </button>
+        <button class="area-btn drill-btn" onclick="navToArea('td')">Ver tablero →</button>
+      </div>
+    </div>
+
+    <!-- AI -->
+    <div class="area-card" id="acard-ai">
+      <div class="area-card-head">
+        <div class="area-icon" style="background:var(--ai-l)">🤖</div>
+        <div>
+          <div class="area-name" style="color:var(--ai-d)">Inteligencia Artificial</div>
+          <div class="area-desc">GenAI · AURI · I+D · Implementación</div>
+        </div>
+      </div>
+      <div id="astats-ai"><div class="alert-empty">Sin datos — carga el Excel</div></div>
+      <div class="area-actions">
+        <button class="area-btn upload-btn" id="abtn-ai" onclick="openModalFor('ai')">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+          <span id="abtntxt-ai">Cargar Excel</span>
+        </button>
+        <button class="area-btn drill-btn" onclick="navToArea('ai')">Ver tablero →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── PLANNER VIEW (reused for eo/td/ai) ── -->
+  <div id="view-plan" class="view">
+    <div class="plan-search">
+      <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="4"/><path d="M10 10l3 3"/></svg>
+      <input type="text" id="bsin" placeholder="Filtrar tareas..." oninput="renderPlan()">
+    </div>
+    <div class="chips-scroll" id="bchips">
+      <span class="chip" style="background:#ffc8d4;color:#9b1c2e" onclick="bFbucket('Stand By (Congelado)',this)">Stand By <b id="bc0">0</b></span>
+      <span class="chip" style="background:#fde6b0;color:#7a4500" onclick="bFbucket('No iniciado (BackLog)',this)">BackLog <b id="bc1">0</b></span>
+      <span class="chip" style="background:#fde68a;color:#78520a" onclick="bFbucket('Pendiente',this)">Pendiente <b id="bc2">0</b></span>
+      <span class="chip" style="background:#a7f3d0;color:#065f3e" onclick="bFbucket('En Curso',this)">En Curso <b id="bc3">0</b></span>
+      <span class="chip" style="background:#ddd6fe;color:#4c1d95" onclick="bFbucket('Finalizado',this)">Finalizado <b id="bc4">0</b></span>
+    </div>
+    <div class="plan-info" id="plan-info"></div>
+    <div id="plan-body"></div>
+  </div>
+
+  <!-- ── ALERTS VIEW ── -->
+  <div id="view-alerts" class="view">
+    <div class="alert-section">
+      <div class="alert-card">
+        <div class="alert-head" style="color:#ef4444">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2a1 1 0 011 1v5a1 1 0 01-2 0V3a1 1 0 011-1z"/><circle cx="8" cy="13" r="1" fill="currentColor"/></svg>
+          Vencidas / en riesgo
+        </div>
+        <div id="panel-late"><div class="alert-empty">Sin datos cargados</div></div>
+      </div>
+    </div>
+    <div class="alert-section">
+      <div class="alert-card">
+        <div class="alert-head" style="color:#2563eb">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="14" height="12" rx="1"/><path d="M5 1v2M11 1v2M1 6h14"/></svg>
+          Esta semana
+        </div>
+        <div id="panel-week"><div class="alert-empty">Sin datos cargados</div></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /content -->
+
+<!-- BOTTOM NAV -->
+<nav class="bnav">
+  <button class="bnav-item on" id="nav-exec" onclick="navTo('exec',this)">
+    <div style="position:relative"><span class="bnav-ico">🏠</span></div>
+    <span class="bnav-lbl">Inicio</span>
+  </button>
+  <button class="bnav-item" id="nav-eo" onclick="navToArea('eo')">
+    <span class="bnav-ico">🏭</span>
+    <span class="bnav-lbl">EO</span>
+  </button>
+  <button class="bnav-item" id="nav-td" onclick="navToArea('td')">
+    <span class="bnav-ico">💻</span>
+    <span class="bnav-lbl">TD</span>
+  </button>
+  <button class="bnav-item" id="nav-ai" onclick="navToArea('ai')">
+    <span class="bnav-ico">🤖</span>
+    <span class="bnav-lbl">IA</span>
+  </button>
+  <button class="bnav-item" id="nav-alerts" onclick="navTo('alerts',this)">
+    <span class="bnav-ico">⚠️</span>
+    <span class="bnav-lbl">Alertas</span>
+    <span class="bnav-dot" id="late-dot"></span>
+  </button>
+</nav>
+
+<!-- MODAL -->
+<div class="overlay" id="overlay" onclick="closeIfOut(event)">
+  <div class="modal">
+    <div class="modal-handle"></div>
+    <h3 id="mtitle">Cargar Excel</h3>
+    <p>Exporta desde Microsoft Planner → <b>··· → Exportar plan a Excel</b></p>
+    <div class="area-selector" id="area-selector">
+      <button class="area-sel-btn" data-area="eo" onclick="selArea('eo',this)"><span class="area-sel-icon">🏭</span>EO</button>
+      <button class="area-sel-btn" data-area="td" onclick="selArea('td',this)"><span class="area-sel-icon">💻</span>TD</button>
+      <button class="area-sel-btn" data-area="id" onclick="selArea('id',this)"><span class="area-sel-icon">🔬</span>I+D IA</button>
+      <button class="area-sel-btn" data-area="im" onclick="selArea('im',this)"><span class="area-sel-icon">⚙️</span>Impl. IA</button>
+    </div>
+    <div class="dz" id="dz" onclick="document.getElementById('fi').click()"
+      ondragover="event.preventDefault();this.classList.add('drag')"
+      ondragleave="this.classList.remove('drag')" ondrop="onDrop(event)">
+      <svg viewBox="0 0 40 40" fill="none"><path d="M20 28V12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><path d="M13 19l7-7 7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M6 32h28" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <div class="dz-t">Toca para seleccionar archivo</div>
+      <div class="dz-s">.xlsx · .xls · .csv</div>
+      <input type="file" id="fi" accept=".xlsx,.xls,.csv" onchange="onFI(event)">
+    </div>
+    <div class="mfoot"><button class="mbtn" onclick="closeModal()">Cancelar</button></div>
+  </div>
+</div>
+
+<div class="toast" id="toast">
+  <svg width="14" height="14" viewBox="0 0 16 16" fill="none"><path d="M3 8l3 3 7-7" stroke="#34d399" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+  <span id="toast-msg"></span>
+</div>
+
+<script>
+// ── STATE ──────────────────────────────────────────────
+const AREAS = {
+  eo:{ name:'Excelencia Operacional', hex:'#059669', icon:'🏭', rows:null },
+  td:{ name:'Transformación Digital', hex:'#2563eb', icon:'💻', rows:null },
+  ai:{ name:'Inteligencia Artificial', hex:'#7c3aed', icon:'🤖', rows:null },
+  id:{ name:'I+D en IA',              hex:'#0891b2', icon:'🔬', rows:null },
+  im:{ name:'Implementación IA',      hex:'#d97706', icon:'⚙️',  rows:null },
+};
+const BUCKETS = [
+  {k:'Stand By (Congelado)',   cls:'#ffc8d4', fcls:'#9b1c2e'},
+  {k:'No iniciado (BackLog)', cls:'#fde6b0', fcls:'#7a4500'},
+  {k:'Pendiente',              cls:'#fde68a', fcls:'#78520a'},
+  {k:'En Curso',               cls:'#a7f3d0', fcls:'#065f3e'},
+  {k:'Finalizado',             cls:'#ddd6fe', fcls:'#4c1d95'},
+];
+const AVC=['#7c3aed','#059669','#2563eb','#dc2626','#d97706','#0891b2','#be185d','#65a30d'];
+const TCL=[['#dcfce7','#166534'],['#dbeafe','#1e3a8a'],['#fce7f3','#831843'],['#fef9c3','#713f12'],
+           ['#f0fdf4','#14532d'],['#ede9fe','#3b0764'],['#ffedd5','#7c2d12'],['#e0f2fe','#0c4a6e'],
+           ['#fdf2f8','#701a75'],['#ecfdf5','#064e3b'],['#fef3c7','#78350f'],['#f5f3ff','#4c1d95']];
+const tcm={};
+let curArea='exec', modalTarget=null, abf=null;
+
+// ── HELPERS ────────────────────────────────────────────
+function avC(n){let h=0;for(const c of(n||''))h=(c.charCodeAt(0)+((h<<5)-h))|0;return AVC[Math.abs(h)%AVC.length]}
+function tc(l){if(!tcm[l]){const i=Object.keys(tcm).length%TCL.length;tcm[l]=TCL[i]}return tcm[l]}
+function gv(r,...ks){for(const k of ks){if(r[k]!==undefined&&r[k]!==''&&r[k]!==null)return r[k]}return''}
+function gName(r){return(gv(r,'Nombre','Task Name','Tarea')||'').toString().trim()}
+function gBucket(r){return(gv(r,'Depósito','Deposito','Bucket','Bucket Name')||'').toString().trim()}
+function gAssign(r){return(gv(r,'Asignado a','Assigned To')||'').toString().trim()}
+function gPct(r){const v=gv(r,'% completado','Percent Complete','% Completado');return v===''||v===null||v===undefined?null:parseFloat(v)}
+function gEnd(r){return gv(r,'Finalización','Finalizacion','Due Date','End Date')}
+function gLabels(r){return(gv(r,'Etiquetas','Labels')||'').toString().trim()}
+function gPrio(r){return(gv(r,'Prioridad','Priority')||'').toString().trim()}
+function gWeek(r){const v=(gv(r,'Abordaría esta Semana?','Week')||'').toString().trim();return v==='Sí'||v==='Si'||v==='Yes'||v===true||v==='TRUE'}
+function pDate(v){if(!v||v==='')return null;if(v instanceof Date)return isNaN(v)?null:v;if(typeof v==='number'){const d=new Date(Math.round((v-25569)*86400*1000));return isNaN(d)?null:d}const d=new Date(v);return isNaN(d)?null:d}
+function fDate(v){const d=pDate(v);if(!d)return null;return d.toLocaleDateString('es-CL',{day:'2-digit',month:'2-digit',year:'2-digit'})}
+function isLate(v,pct){const d=pDate(v);if(!d)return false;if(pct===1||pct===100)return false;const n=new Date();n.setHours(0,0,0,0);const dd=new Date(d);dd.setHours(0,0,0,0);return dd<n}
+function isNear(v){const d=pDate(v);if(!d)return false;const n=new Date();n.setHours(0,0,0,0);const dd=new Date(d);dd.setHours(0,0,0,0);const diff=(dd-n)/86400000;return diff>=0&&diff<=7}
+
+// ── PARSE ──────────────────────────────────────────────
+function parseWB(wb){
+  const sheet=wb.Sheets[wb.SheetNames[0]];
+  const raw=XLSX.utils.sheet_to_json(sheet,{header:1,defval:''});
+  let hi=-1;
+  for(let i=0;i<Math.min(15,raw.length);i++){
+    const row=raw[i];
+    if(row.some(c=>typeof c==='string'&&(c.trim()==='Nombre'||c.trim()==='Task Name'||c.trim()==='Número de tarea'))){hi=i;break}
+  }
+  if(hi<0)return null;
+  const hdrs=raw[hi].map(h=>(h||'').toString().trim());
+  const rows=[];
+  for(let i=hi+1;i<raw.length;i++){
+    const r=raw[i];
+    if(r.every(c=>c===''||c===null||c===undefined))continue;
+    const obj={};hdrs.forEach((h,j)=>{obj[h]=r[j]??''});
+    if(!gName(obj).trim())continue;
+    rows.push(obj);
+  }
+  return rows.length?rows:null;
+}
+
+// ── STATS ──────────────────────────────────────────────
+function calcStats(rows){
+  if(!rows||!rows.length)return null;
+  const total=rows.length;
+  const done=rows.filter(r=>gPct(r)===1||gPct(r)===100).length;
+  const late=rows.filter(r=>isLate(gEnd(r),gPct(r))).length;
+  const pct=total?Math.round(done/total*100):0;
+  const buckets={};BUCKETS.forEach(b=>buckets[b.k]=rows.filter(r=>gBucket(r)===b.k).length);
+  return{total,done,late,pct,buckets};
+}
+
+// ── UPLOAD ─────────────────────────────────────────────
+function selArea(areaId,el){
+  modalTarget=areaId;
+  document.querySelectorAll('.area-sel-btn').forEach(b=>b.classList.toggle('sel',b.dataset.area===areaId));
+}
+function openModalFor(planId){
+  modalTarget=planId;
+  if(planId){
+    document.querySelectorAll('.area-sel-btn').forEach(b=>b.classList.toggle('sel',b.dataset.area===planId));
+  }
+  document.getElementById('overlay').classList.add('on');
+}
+function openModal(){openModalFor(curArea==='exec'?null:curArea)}
+function closeModal(){document.getElementById('overlay').classList.remove('on')}
+function closeIfOut(e){if(e.target===e.currentTarget)closeModal()}
+function onDrop(e){e.preventDefault();document.getElementById('dz').classList.remove('drag');const f=Array.from(e.dataTransfer.files).find(f=>f.name.match(/\.(xlsx|xls|csv)$/i));if(f)loadFile(f)}
+function onFI(e){const f=e.target.files[0];if(f)loadFile(f);e.target.value=''}
+
+function loadFile(file){
+  if(!modalTarget){
+    const fn=file.name.toLowerCase();
+    if(fn.includes('excelencia')||fn.includes(' eo'))modalTarget='eo';
+    else if(fn.includes('digital')||fn.includes(' td'))modalTarget='td';
+    else if(fn.includes('i+d')||fn.includes('investigacion'))modalTarget='id';
+    else if(fn.includes('impl'))modalTarget='im';
+    else if(fn.includes('artificial')||fn.includes(' ia'))modalTarget='ai';
+    else{toast('Selecciona el área primero');return}
+  }
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const wb=XLSX.read(e.target.result,{type:'binary',cellDates:true});
+      const rows=parseWB(wb);
+      if(!rows){toast('No se encontraron tareas. Verifica el archivo.');return}
+      AREAS[modalTarget].rows=rows;
+      closeModal();refreshAll();
+      toast(`${rows.length} tareas cargadas — ${AREAS[modalTarget].name}`);
+      modalTarget=null;
+    }catch(err){toast('Error al leer el archivo.')}
+  };
+  reader.readAsBinaryString(file);
+}
+
+// ── NAVIGATION ─────────────────────────────────────────
+function navTo(dest, btnEl){
+  curArea=dest;
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.querySelectorAll('.bnav-item').forEach(b=>b.classList.remove('on'));
+  if(dest==='exec'){
+    document.getElementById('view-exec').classList.add('on');
+    document.getElementById('nav-exec').classList.add('on');
+    document.getElementById('hdr-sub').textContent='Vista Ejecutiva';
+  }else if(dest==='alerts'){
+    document.getElementById('view-alerts').classList.add('on');
+    document.getElementById('nav-alerts').classList.add('on');
+    document.getElementById('hdr-sub').textContent='Alertas';
+    renderAlerts();
+  }
+  document.querySelector('.content').scrollTop=0;
+}
+
+function navToArea(areaId){
+  curArea=areaId;
+  abf=null;
+  document.getElementById('bsin').value='';
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));
+  document.querySelectorAll('.view').forEach(v=>v.classList.remove('on'));
+  document.querySelectorAll('.bnav-item').forEach(b=>b.classList.remove('on'));
+  document.getElementById('view-plan').classList.add('on');
+  const navBtn=document.getElementById('nav-'+areaId);
+  if(navBtn)navBtn.classList.add('on');
+  document.getElementById('hdr-sub').textContent=AREAS[areaId].name;
+  renderPlan();
+  document.querySelector('.content').scrollTop=0;
+}
+
+// ── RENDER EXEC ────────────────────────────────────────
+function refreshAll(){
+  updateKPIs();updateAreaCards();
+  if(curArea==='plan'||curArea==='eo'||curArea==='td'||curArea==='ai'||curArea==='id'||curArea==='im')renderPlan();
+  if(curArea==='alerts')renderAlerts();
+  // Late dot
+  const allRows=Object.values(AREAS).flatMap(a=>a.rows||[]);
+  const lateN=allRows.filter(r=>isLate(gEnd(r),gPct(r))).length;
+  document.getElementById('late-dot').classList.toggle('on',lateN>0);
+}
+
+function updateKPIs(){
+  const allRows=Object.values(AREAS).flatMap(a=>a.rows||[]);
+  if(!allRows.length)return;
+  const s=calcStats(allRows);
+  const eos=calcStats(AREAS.eo.rows);
+  const tds=calcStats(AREAS.td.rows);
+  const ais=calcStats([...(AREAS.ai.rows||[]),...(AREAS.id.rows||[]),...(AREAS.im.rows||[])]);
+  const set=(id,sub,val,pct,bar,color)=>{
+    document.getElementById(id).textContent=val;
+    if(sub)document.getElementById(sub).textContent=pct;
+    if(bar)document.getElementById(bar).style.cssText=`width:${pct.match(/\d+/)[0]}%;background:${color}`;
+  };
+  document.getElementById('kpi-total').textContent=s.total.toLocaleString('es');
+  document.getElementById('kpi-total-sub').textContent=`${s.pct}% completado · ${s.late} vencidas`;
+  document.getElementById('kbar-total').style.width=s.pct+'%';
+  if(eos){document.getElementById('kpi-eo').textContent=eos.total;document.getElementById('kpi-eo-sub').textContent=`${eos.pct}% · ${eos.late} venc.`;document.getElementById('kbar-eo').style.width=eos.pct+'%'}
+  if(tds){document.getElementById('kpi-td').textContent=tds.total;document.getElementById('kpi-td-sub').textContent=`${tds.pct}% · ${tds.late} venc.`;document.getElementById('kbar-td').style.width=tds.pct+'%'}
+  if(ais){document.getElementById('kpi-ai').textContent=ais.total;document.getElementById('kpi-ai-sub').textContent=`${ais.pct}% · ${ais.late} venc.`;document.getElementById('kbar-ai').style.width=ais.pct+'%'}
+  document.getElementById('kpi-late').textContent=s.late;
+  document.getElementById('kpi-late-sub').textContent=`${Math.round(s.late/s.total*100)||0}% del total`;
+  document.getElementById('kbar-late').style.width=Math.min(100,s.late/Math.max(1,s.total)*400)+'%';
+}
+
+function updateAreaCards(){
+  ['eo','td','ai'].forEach(aId=>{
+    const a=AREAS[aId];
+    let rows=a.rows?[...a.rows]:[];
+    if(aId==='ai')rows=[...rows,...(AREAS.id.rows||[]),...(AREAS.im.rows||[])];
+    const s=calcStats(rows);
+    const btn=document.getElementById('abtn-'+aId);
+    const btntxt=document.getElementById('abtntxt-'+aId);
+    if(a.rows){btn.classList.add('loaded');btntxt.textContent=`✓ ${rows.length} tareas · Actualizar`}
+    if(!s){document.getElementById('astats-'+aId).innerHTML='<div class="alert-empty">Sin datos — carga el Excel</div>';return}
+    document.getElementById('astats-'+aId).innerHTML=`
+      <div class="area-stats">
+        <div class="astat"><div class="astat-v">${s.total}</div><div class="astat-l">Total</div></div>
+        <div class="astat"><div class="astat-v" style="color:#059669">${s.done}</div><div class="astat-l">Hecho</div></div>
+        <div class="astat"><div class="astat-v" style="color:#ef4444">${s.late}</div><div class="astat-l">Vencidas</div></div>
+        <div class="astat"><div class="astat-v" style="color:${a.hex}">${s.pct}%</div><div class="astat-l">Avance</div></div>
+      </div>
+      <div class="area-prog-bar"><div class="area-prog-fill" style="width:${s.pct}%;background:${a.hex}"></div></div>`;
+  });
+}
+
+// ── RENDER PLANNER ─────────────────────────────────────
+function renderPlan(){
+  const a=AREAS[curArea];
+  const body=document.getElementById('plan-body');
+  const info=document.getElementById('plan-info');
+  if(!a||!a.rows){
+    body.innerHTML=`<div class="empty">
+      <svg viewBox="0 0 40 40" fill="none"><rect x="4" y="4" width="32" height="32" rx="4" stroke="currentColor" stroke-width="2"/><path d="M12 20h16M20 12v16" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <h4>Sin datos</h4>
+      <p>Carga el Excel exportado desde Microsoft Planner</p>
+      <button class="empty-btn" onclick="openModal()">↑ Cargar Excel</button>
+    </div>`;
+    info.textContent='';setBCounts({});return;
+  }
+  const srch=document.getElementById('bsin').value.toLowerCase().trim();
+  const grp={};BUCKETS.forEach(b=>grp[b.k]=[]);
+  a.rows.forEach(r=>{const b=gBucket(r);if(grp[b]!==undefined)grp[b].push(r);else grp['No iniciado (BackLog)'].push(r)});
+  const cnt={};BUCKETS.forEach((b,i)=>cnt[i]=grp[b.k].length);setBCounts(cnt);
+  let totalShown=0;
+  let html='';
+  BUCKETS.forEach(b=>{
+    let rows=grp[b.k];
+    if(abf&&abf!==b.k)return;
+    if(srch)rows=rows.filter(r=>gName(r).toLowerCase().includes(srch)||gLabels(r).toLowerCase().includes(srch)||gAssign(r).toLowerCase().includes(srch));
+    if(!rows.length)return;
+    totalShown+=rows.length;
+    const isOpen=abf===b.k||!abf;
+    html+=`<div class="sgroup${isOpen?' open':''}">
+      <div class="sgroup-head" onclick="toggleGroup(this)">
+        <div class="sgroup-color" style="background:${b.cls}"></div>
+        <span class="sgroup-name">${b.k}</span>
+        <span class="sgroup-cnt">${rows.length}</span>
+        <span class="sgroup-chevron">›</span>
+      </div>
+      <div class="sgroup-body">${rows.map(r=>mkTaskRow(r)).join('')}</div>
+    </div>`;
+  });
+  body.innerHTML=html||'<div class="empty"><svg viewBox="0 0 40 40" fill="none"><circle cx="20" cy="20" r="16" stroke="currentColor" stroke-width="2"/><path d="M14 20h12M20 14v12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg><h4>Sin resultados</h4><p>Prueba con otro filtro</p></div>';
+  info.textContent=totalShown?`${totalShown} tarea${totalShown!==1?'s':''} · ${a.rows.length} total`:'';
+}
+
+function mkTaskRow(r){
+  const name=gName(r),pct=gPct(r),end=gEnd(r),labels=gLabels(r),assign=gAssign(r),week=gWeek(r);
+  const isDone=pct===1||pct===100;
+  const pctN=pct===null?0:(pct<=1?Math.round(pct*100):Math.round(pct));
+  const tList=labels.split(';').map(s=>s.trim()).filter(Boolean);
+  const tHtml=tList.filter(t=>t!=='Week').slice(0,2).map(t=>{const[bg,fg]=tc(t);return`<span class="tag" style="background:${bg};color:${fg}">${t}</span>`}).join('');
+  const ds=fDate(end);
+  let dpCls='ok';if(ds){if(isLate(end,pct))dpCls='late';else if(isNear(end))dpCls='near';}
+  const dp=ds?`<span class="dp ${dpCls}"><svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.2"><rect x="0" y="1" width="10" height="8" rx="1"/><path d="M3 0v2M7 0v2M0 4h10"/></svg>${ds}</span>`:'';
+  const ppl=assign.split(/[;,]/).filter(Boolean).map(s=>s.trim());
+  const wTag=week?'<span class="wk-tag">Week</span>':'';
+  return`<div class="task-row${week?' wk':''}">
+    <div class="task-chk${isDone?' ck':''}"></div>
+    <div class="task-body">
+      <div class="task-name${isDone?' done':''}">${name}</div>
+      ${tHtml||wTag?`<div class="task-tags">${tHtml}${wTag}</div>`:''}
+      <div class="task-meta">
+        ${dp}
+        ${assign?`<span class="task-assign">👤 ${ppl.slice(0,2).join(', ')}</span>`:''}
+        ${pctN>0&&!isDone?`<span class="task-pct">${pctN}%</span>`:''}
+      </div>
+      ${pctN>0&&!isDone?`<div class="task-pbar"><div class="task-pfill" style="width:${pctN}%;background:${pctN<30?'#f59e0b':pctN<70?'#3b82f6':'#10b981'}"></div></div>`:''}
+    </div>
+  </div>`;
+}
+
+function toggleGroup(head){head.parentElement.classList.toggle('open')}
+
+// ── RENDER ALERTS ──────────────────────────────────────
+function renderAlerts(){
+  const lateEl=document.getElementById('panel-late');
+  const weekEl=document.getElementById('panel-week');
+  const lateItems=[],weekItems=[];
+  Object.entries(AREAS).forEach(([k,a])=>{
+    if(!a.rows)return;
+    a.rows.forEach(r=>{
+      if(isLate(gEnd(r),gPct(r)))lateItems.push({r,a});
+      if(gWeek(r)&&gBucket(r)!=='Finalizado')weekItems.push({r,a});
+    });
+  });
+  if(!lateItems.length){lateEl.innerHTML='<div class="alert-empty">✓ Sin tareas vencidas</div>'}
+  else lateEl.innerHTML=lateItems.slice(0,15).map(({r,a})=>`
+    <div class="alert-item">
+      <div class="alert-ico" style="background:${a.hex}22">${a.icon}</div>
+      <div>
+        <div class="alert-name">${gName(r).substring(0,55)}${gName(r).length>55?'…':''}</div>
+        <div class="alert-area">${a.name} · ${gBucket(r)}</div>
+        <div class="alert-due" style="color:#ef4444">Venció: ${fDate(gEnd(r))||'—'}</div>
+      </div>
+    </div>`).join('')+(lateItems.length>15?`<div class="alert-empty">+${lateItems.length-15} más</div>`:'');
+
+  if(!weekItems.length){weekEl.innerHTML='<div class="alert-empty">Sin tareas marcadas para esta semana</div>'}
+  else weekEl.innerHTML=weekItems.slice(0,15).map(({r,a})=>`
+    <div class="alert-item">
+      <div class="week-strip" style="background:${a.hex}"></div>
+      <div>
+        <div class="week-name">${gName(r).substring(0,55)}${gName(r).length>55?'…':''}</div>
+        <div class="week-meta"><span style="color:${a.hex};font-weight:700">${a.name}</span><span>${gBucket(r)}</span>${fDate(gEnd(r))?`<span>📅 ${fDate(gEnd(r))}</span>`:''}</div>
+      </div>
+    </div>`).join('')+(weekItems.length>15?`<div class="alert-empty">+${weekItems.length-15} más</div>`:'');
+}
+
+// ── FILTERS ────────────────────────────────────────────
+function setBCounts(c){['bc0','bc1','bc2','bc3','bc4'].forEach((id,i)=>document.getElementById(id).textContent=c[i]??0)}
+function bFbucket(b,el){abf=abf===b?null:b;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));if(abf)el.classList.add('on');renderPlan()}
+
+// ── TOAST ──────────────────────────────────────────────
+let tt=null;
+function toast(msg){const t=document.getElementById('toast');document.getElementById('toast-msg').textContent=msg;t.classList.add('on');clearTimeout(tt);tt=setTimeout(()=>t.classList.remove('on'),3000)}
+
+// ── INIT ───────────────────────────────────────────────
+const d=new Date();
+document.getElementById('hdr-date').textContent=d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
+</script>
+</body>
+</html>
