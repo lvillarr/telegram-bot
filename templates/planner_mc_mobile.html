@@ -178,6 +178,40 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
 .toast{position:fixed;bottom:calc(var(--nav-h) + var(--safe-b) + 12px);left:50%;transform:translateX(-50%);background:#0f1124;color:#fff;padding:10px 18px;border-radius:20px;font-size:13px;z-index:300;opacity:0;pointer-events:none;transition:opacity .25s;white-space:nowrap;display:flex;align-items:center;gap:7px}
 .toast.on{opacity:1}
 
+/* ── WEEKLY SUMMARY ──────────────────────── */
+.sum-sheet{position:fixed;inset:0;background:rgba(10,12,30,.6);z-index:250;display:none;align-items:flex-end;justify-content:center;backdrop-filter:blur(3px)}
+.sum-sheet.on{display:flex}
+.sum-modal{background:#f5f4f0;border-radius:16px 16px 0 0;width:100%;max-height:92vh;display:flex;flex-direction:column}
+.sum-handle{width:36px;height:4px;border-radius:2px;background:#d1d5db;margin:12px auto 0}
+.sum-topbar{padding:12px 16px 10px;display:flex;align-items:center;gap:9px;border-bottom:2px solid #e8e5df;background:#fff}
+.sum-topbar-icon{font-size:18px}
+.sum-topbar-title{font-size:14px;font-weight:700;flex:1}
+.sum-body{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:18px 16px 12px}
+.sum-body::-webkit-scrollbar{display:none}
+/* OneNote page mobile */
+.on-notebook{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#9ca3af;margin-bottom:3px}
+.on-title{font-size:22px;font-weight:700;letter-spacing:-.4px;border-bottom:2px solid #111827;padding-bottom:5px;margin-bottom:3px}
+.on-meta{font-size:11.5px;color:#6b7280;margin-bottom:20px;line-height:1.5}
+.on-section{margin-bottom:18px;border-left:3px solid #e5e7eb;padding-left:14px}
+.on-sec-head{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.on-task{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #ece9e3}
+.on-task:last-child{border-bottom:none}
+.on-chk{width:17px;height:17px;border:2px solid #9ca3af;border-radius:3px;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:10px}
+.on-chk.done{background:#10b981;border-color:#10b981;color:#fff}
+.on-task-name{font-size:13px;font-weight:500;line-height:1.4}
+.on-task-name.done{text-decoration:line-through;color:#9ca3af}
+.on-task-meta{font-size:11px;color:#9ca3af;margin-top:3px;display:flex;gap:8px;flex-wrap:wrap}
+.on-task-meta .late{color:#ef4444;font-weight:700}
+.on-task-meta .near{color:#f59e0b;font-weight:700}
+.on-risk{background:#fff5f5;border:1px solid #fecaca;border-radius:10px;padding:12px 14px;margin-bottom:18px}
+.on-risk-head{font-size:12px;font-weight:700;color:#dc2626;margin-bottom:8px}
+.on-risk-item{font-size:12px;color:#374151;padding:5px 0;border-bottom:1px solid #fecaca;display:flex;gap:8px}
+.on-risk-item:last-child{border-bottom:none}
+.on-empty{text-align:center;padding:36px 16px;color:#9ca3af}
+.sum-footer{background:#fff;border-top:1px solid #e8e5df;padding:12px 16px;padding-bottom:calc(12px + var(--safe-b));display:flex;gap:8px}
+.sum-footer .mbtn{flex:1}
+.week-sum-btn{width:100%;margin-bottom:14px;padding:13px;border-radius:12px;background:#fff;border:1.5px solid #6366f1;color:#4f46e5;font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 1px 4px rgba(99,102,241,.12);-webkit-tap-highlight-color:transparent}
+
 /* ── EMPTY STATE ─────────────────────────── */
 .empty{display:flex;flex-direction:column;align-items:center;padding:40px 20px;gap:8px;text-align:center}
 .empty svg{width:44px;height:44px;opacity:.25}
@@ -242,6 +276,11 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
         <div class="kpi-bar"><div class="kpi-fill" id="kbar-late" style="width:0%;background:#ef4444"></div></div>
       </div>
     </div>
+
+    <button class="week-sum-btn" onclick="openWeeklySummary()">
+      <svg width="16" height="16" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="1" y="1" width="12" height="12" rx="1.5"/><path d="M4 4h6M4 7h6M4 10h4"/></svg>
+      Resumen de la semana
+    </button>
 
     <div class="sec-ttl">Estado por área</div>
 
@@ -716,6 +755,137 @@ function toast(msg){const t=document.getElementById('toast');document.getElement
 // ── INIT ───────────────────────────────────────────────
 const d=new Date();
 document.getElementById('hdr-date').textContent=d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
+
+// ── WEEKLY SUMMARY ─────────────────────────────────────
+function isWeekTask(r){
+  return gWeek(r)||gLabels(r).split(';').map(s=>s.trim()).includes('Week');
+}
+
+function openWeeklySummary(){
+  const allRows=Object.values(AREAS).flatMap(a=>a.rows||[]);
+  if(!allRows.length){toast('Carga al menos un Excel primero');return}
+  document.getElementById('sum-content').innerHTML=buildSummaryHTML();
+  document.getElementById('sum-sheet').classList.add('on');
+}
+function closeSummary(){document.getElementById('sum-sheet').classList.remove('on')}
+function closeSumIfOut(e){if(e.target===e.currentTarget)closeSummary()}
+
+function buildSummaryHTML(){
+  const now=new Date();
+  const dow=now.getDay();
+  const ws=new Date(now);ws.setDate(now.getDate()-(dow===0?6:dow-1));
+  const we=new Date(ws);we.setDate(ws.getDate()+6);
+  const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
+  const fmtLong=d=>d.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
+  const aColors={eo:'#059669',td:'#2563eb',ai:'#7c3aed',id:'#0891b2',im:'#d97706'};
+
+  const byArea={};let total=0;
+  Object.entries(AREAS).forEach(([k,a])=>{
+    if(!a.rows)return;
+    const tasks=a.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)');
+    if(tasks.length){byArea[k]={area:a,tasks};total+=tasks.length}
+  });
+  const lateAll=Object.entries(AREAS).flatMap(([k,a])=>(a.rows||[]).filter(r=>isLate(gEnd(r),gPct(r))).map(r=>({r,area:a})));
+
+  if(!total&&!lateAll.length){
+    return`<div class="on-empty"><div style="font-size:32px;margin-bottom:8px">📋</div><div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:4px">Sin actividades esta semana</div><div style="font-size:12px">Marca tareas con la etiqueta "Week"</div></div>`;
+  }
+
+  let html=`<div class="on-notebook">📓 Mejora Continua — Subgerencia</div>
+  <div class="on-title">Resumen Semanal</div>
+  <div class="on-meta">Semana del <b>${fmt(ws)}</b> al <b>${fmt(we)}</b><br>Generado el ${fmtLong(now)}</div>`;
+
+  Object.entries(byArea).forEach(([k,{area,tasks}])=>{
+    html+=`<div class="on-section" style="border-left-color:${aColors[k]||'#6b7280'}">
+      <div class="on-sec-head" style="color:${aColors[k]||'#374151'}">
+        <span>${area.icon}</span>${area.name}
+        <span style="font-size:10px;font-weight:400;color:#9ca3af;text-transform:none;letter-spacing:0">(${tasks.length})</span>
+      </div>`;
+    tasks.forEach(r=>{
+      const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+      const isDone=pct===1||pct===100;
+      const end=gEnd(r);const ds=fDate(end);
+      const late=isLate(end,pct);const near=isNear(end);
+      const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
+      html+=`<div class="on-task">
+        <div class="on-chk${isDone?' done':''}">${isDone?'✓':''}</div>
+        <div>
+          <div class="on-task-name${isDone?' done':''}">${gName(r)}</div>
+          <div class="on-task-meta">
+            ${assign?`<span>👤 ${assign}</span>`:''}
+            ${ds?`<span class="${late?'late':near?'near':''}">${late?'⚠ Venció':'📅'} ${ds}</span>`:''}
+            ${pctN!==null&&!isDone?`<span>${pctN}%</span>`:''}
+            <span style="background:#f3f4f8;padding:1px 6px;border-radius:3px;font-size:10px">${gBucket(r)}</span>
+          </div>
+        </div>
+      </div>`;
+    });
+    html+='</div>';
+  });
+
+  if(lateAll.length){
+    html+=`<div class="on-risk"><div class="on-risk-head">⚠️ Requieren atención (${lateAll.length})</div>`;
+    lateAll.slice(0,8).forEach(({r,area})=>{
+      html+=`<div class="on-risk-item"><span>${area.icon}</span><div>
+        <div style="font-weight:600;font-size:12px">${gName(r).substring(0,60)}${gName(r).length>60?'…':''}</div>
+        <div style="font-size:11px;color:#dc2626">${area.name} · Venció: ${fDate(gEnd(r))||'—'}</div>
+      </div></div>`;
+    });
+    if(lateAll.length>8)html+=`<div style="font-size:11px;color:#9ca3af;padding-top:4px">+${lateAll.length-8} más</div>`;
+    html+='</div>';
+  }
+  return html;
+}
+
+function copySummary(){
+  const now=new Date();
+  const dow=now.getDay();
+  const ws=new Date(now);ws.setDate(now.getDate()-(dow===0?6:dow-1));
+  const we=new Date(ws);we.setDate(ws.getDate()+6);
+  const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
+  let txt=`📓 MEJORA CONTINUA — Subgerencia\nResumen Semanal · ${fmt(ws)} al ${fmt(we)}\nGenerado: ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}\n${'_'.repeat(48)}\n`;
+  const aOrder=['eo','td','ai','id','im'];
+  aOrder.forEach(k=>{
+    const a=AREAS[k];if(!a.rows)return;
+    const tasks=a.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)');
+    if(!tasks.length)return;
+    txt+=`\n${a.icon} ${a.name.toUpperCase()}\n${'─'.repeat(36)}\n`;
+    tasks.forEach(r=>{
+      const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+      const isDone=pct===1||pct===100;
+      const ds=fDate(gEnd(r));const assign=gAssign(r)||'Sin asignar';
+      txt+=`\n${isDone?'☑':'□'} ${gName(r)}\n`;
+      const meta=[];
+      if(assign)meta.push(`Responsable: ${assign}`);
+      if(ds)meta.push(`Vence: ${ds}${isLate(gEnd(r),pct)?' ⚠ VENCIDA':''}`);
+      if(pctN!==null&&!isDone)meta.push(`Avance: ${pctN}%`);
+      meta.push(gBucket(r));
+      txt+=`  → ${meta.join(' | ')}\n`;
+    });
+  });
+  const lateAll=Object.entries(AREAS).flatMap(([k,a])=>(a.rows||[]).filter(r=>isLate(gEnd(r),gPct(r))).map(r=>({r,area:a})));
+  if(lateAll.length){
+    txt+=`\n⚠️  REQUIEREN ATENCIÓN INMEDIATA\n${'─'.repeat(36)}\n`;
+    lateAll.forEach(({r,area})=>{txt+=`🔴 ${gName(r)}\n   ${area.name} · Venció: ${fDate(gEnd(r))||'—'} · ${gAssign(r)||'Sin asignar'}\n`});
+  }
+  navigator.clipboard.writeText(txt).then(()=>toast('Texto copiado')).catch(()=>toast('Error al copiar'));
+}
 </script>
+
+<!-- SUMMARY SHEET -->
+<div class="sum-sheet" id="sum-sheet" onclick="closeSumIfOut(event)">
+  <div class="sum-modal">
+    <div class="sum-handle"></div>
+    <div class="sum-topbar">
+      <span class="sum-topbar-icon">📓</span>
+      <span class="sum-topbar-title">Resumen Semanal</span>
+    </div>
+    <div class="sum-body" id="sum-content"></div>
+    <div class="sum-footer">
+      <button class="mbtn" onclick="copySummary()">📋 Copiar texto</button>
+      <button class="mbtn pri" onclick="closeSummary()">Cerrar</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
