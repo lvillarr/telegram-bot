@@ -420,6 +420,13 @@ Registra horas ON/OFF reales, eventos y desviaciones por parcial...
   - Bloques de código: triple backtick ```
 """
 
+# Dashboard Planner MC — HTML estático cargado desde archivo
+_PLANNER_HTML = ""
+_planner_path = "templates/planner_mc.html"
+if os.path.exists(_planner_path):
+    with open(_planner_path, encoding="utf-8") as _f:
+        _PLANNER_HTML = _f.read()
+
 IDENTIDAD = """
 # Identidad del sistema — leer antes de responder cualquier pregunta sobre quién eres
 
@@ -568,13 +575,15 @@ def push_history(context, user_msg: str, assistant_reply: str):
 
 
 ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
-    InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
-    InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
+    InlineKeyboardButton("📊 Excel",   callback_data="art_excel"),
+    InlineKeyboardButton("🖥️ PPT",    callback_data="art_pptx"),
+    InlineKeyboardButton("📄 PDF",    callback_data="art_pdf"),
 ], [
-    InlineKeyboardButton("📅 Gantt", callback_data="art_gantt"),
-    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
-    InlineKeyboardButton("📧 Email", callback_data="art_email"),
+    InlineKeyboardButton("📅 Gantt",  callback_data="art_gantt"),
+    InlineKeyboardButton("🌐 HTML",   callback_data="art_html"),
+    InlineKeyboardButton("📧 Email",  callback_data="art_email"),
+], [
+    InlineKeyboardButton("📋 Planner MC", callback_data="art_planner"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
@@ -721,6 +730,7 @@ _ARTIFACT_INTENT = {
     "gantt":        ["gantt", "cronograma", "carta gantt", "timeline", "plan de proyecto"],
     "pptx":         ["ppt", "pptx", "powerpoint", "presentación", "presentacion", "diapositiva"],
     "email":        ["envía un correo", "envia un correo", "manda un correo", "redacta un correo", "escribe un correo"],
+    "planner":      ["planner mc", "dashboard planner", "tablero mc", "dashboard mc"],
 }
 
 def _detect_artifact_intent(text: str) -> str | None:
@@ -776,6 +786,18 @@ def _build_artifact_description(user_msg: str, context) -> str:
 async def _render_artifact(artifact_type: str, description: str,
                            reply_fn, context) -> None:
     """Genera y envía un artefacto, luego muestra el teclado para generar otro."""
+    # Planner MC: HTML estático, sin llamada a Claude
+    if artifact_type == "planner":
+        if not _PLANNER_HTML:
+            await reply_fn("⚠️ Dashboard Planner no disponible en este entorno.")
+            return
+        url = store_html(_PLANNER_HTML)
+        await reply_fn(
+            f"📋 <b>Dashboard Planner MC listo</b>\n\nToca el enlace para abrirlo:\n{url}",
+            parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD
+        )
+        return
+
     _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000}
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     raw = claude_response(prompt, description,
@@ -989,6 +1011,7 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo y lo envía aquí
 `/artifact email resumen análisis para juan@arauco.com`"""
 
 ARTIFACT_PROMPTS = {
+    "planner": "",  # HTML estático — manejado en _render_artifact directamente
     "html": """Eres el Agente DA de Arauco — Subgerencia de Mejora Continua.
 Genera un dashboard HTML interactivo y autocontenido.
 
