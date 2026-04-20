@@ -720,7 +720,7 @@ _ARTIFACT_INTENT = {
     "pdf":          ["pdf", "informe", "reporte", "report"],
     "gantt":        ["gantt", "cronograma", "carta gantt", "timeline", "plan de proyecto"],
     "pptx":         ["ppt", "pptx", "powerpoint", "presentación", "presentacion", "diapositiva"],
-    "email":        ["correo", "email", "mail", "envía un correo", "envia un correo"],
+    "email":        ["envía un correo", "envia un correo", "manda un correo", "redacta un correo", "escribe un correo"],
 }
 
 def _detect_artifact_intent(text: str) -> str | None:
