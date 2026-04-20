@@ -976,7 +976,8 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     artifact_type = query.data.replace("art_", "")
     last_analysis = context.user_data.get("last_analysis", "")
 
-    if not last_analysis:
+    _static_types = {"planner", "planner_mobile"}
+    if not last_analysis and artifact_type not in _static_types:
         await query.edit_message_text("⚠️ No hay análisis previo. Envía una imagen o un mensaje primero.")
         return
 
