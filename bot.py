@@ -592,6 +592,15 @@ ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
 ], [
     InlineKeyboardButton("📋 Planner MC",     callback_data="art_planner"),
     InlineKeyboardButton("📱 Planner Mobile", callback_data="art_planner_mobile"),
+], [
+    InlineKeyboardButton("📝 Tomar nota",     callback_data="notas_modo"),
+]])
+
+NOTAS_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("📓 Juntar en OneNote", callback_data="notas_join"),
+    InlineKeyboardButton("🗑 Borrar notas",      callback_data="notas_clear"),
+], [
+    InlineKeyboardButton("✅ Salir del modo notas", callback_data="notas_salir"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
@@ -927,28 +936,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Intercepta guardado de nota
+    # ── Modo notas: cualquier mensaje se guarda como nota ──
     _nota_kw = ("nota:", "nota ", "apunta:", "apunta ", "anota:", "anota ", "registra:", "registra ")
-    if user_msg.lower().startswith(_nota_kw):
-        sep = ":" if ":" in user_msg.split()[0] else " "
-        content = user_msg.split(sep, 1)[-1].strip() if sep in user_msg else user_msg[6:].strip()
+    _es_nota_explicita = user_msg.lower().startswith(_nota_kw)
+    if context.user_data.get("modo_notas") or _es_nota_explicita:
+        if _es_nota_explicita:
+            sep = ":" if ":" in user_msg.split()[0] else " "
+            content = user_msg.split(sep, 1)[-1].strip()
+        else:
+            content = user_msg.strip()
         if content:
             notas = context.user_data.get("notas", [])
             notas.append({"texto": content, "fecha": datetime.now().strftime("%d/%m %H:%M"), "n": len(notas) + 1})
             context.user_data["notas"] = notas
-            n = len(notas)
-            txt = f"📝 *Nota {n} guardada.*"
-            if n >= 2:
-                kb = InlineKeyboardMarkup([[
-                    InlineKeyboardButton(f"📓 Juntar {n} notas en OneNote", callback_data="notas_join"),
-                    InlineKeyboardButton("🗑 Borrar", callback_data="notas_clear"),
-                ]])
-                await update.message.reply_text(txt, parse_mode="Markdown", reply_markup=kb)
-            else:
-                await update.message.reply_text(
-                    txt + "\n_Escribe otra nota para poder juntarlas en un documento._",
-                    parse_mode="Markdown"
-                )
+            await update.message.reply_text(
+                _notas_status_text(notas), parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD
+            )
             return
 
     # Detecta intención de artefacto y genera directamente usando todo el contexto disponible
@@ -998,12 +1001,43 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await send_reply(update, analysis, reply_markup=ARTIFACT_KEYBOARD)
 
 
+def _notas_status_text(notas: list) -> str:
+    n = len(notas)
+    preview = notas[-1]["texto"][:60] + ("…" if len(notas[-1]["texto"]) > 60 else "")
+    return (f"📝 *Nota {n} guardada*\n"
+            f"_{preview}_\n\n"
+            f"Modo notas activo — escribe o envía un audio.")
+
+
 async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
+    if query.data == "notas_modo":
+        context.user_data["modo_notas"] = True
+        notas = context.user_data.get("notas", [])
+        n = len(notas)
+        msg = ("📝 *Modo notas activado*\n\n"
+               "Escribe lo que quieras anotar o envía un audio — "
+               "todo se guardará como nota.\n\n"
+               f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}")
+        await query.edit_message_reply_markup(reply_markup=None)
+        await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD)
+        return
+
+    if query.data == "notas_salir":
+        context.user_data.pop("modo_notas", None)
+        notas = context.user_data.get("notas", [])
+        n = len(notas)
+        await query.edit_message_text(
+            f"✅ Modo notas desactivado.{' Tienes ' + str(n) + ' nota(s) guardada(s).' if n else ''}",
+            reply_markup=ARTIFACT_KEYBOARD if n else None
+        )
+        return
+
     if query.data == "notas_clear":
         context.user_data.pop("notas", None)
+        context.user_data.pop("modo_notas", None)
         await query.edit_message_text("🗑 Notas borradas.")
         return
 
@@ -1013,6 +1047,7 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ No hay notas guardadas.")
         return
 
+    context.user_data.pop("modo_notas", None)
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text(f"⏳ Organizando *{len(notas)} notas* en documento OneNote...", parse_mode="Markdown")
 
@@ -2223,6 +2258,17 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     await update.message.reply_text(f"🗣️ <b>Transcripción:</b> <i>{_html.escape(transcript)}</i>", parse_mode="HTML")
+
+    # Si está en modo notas, guardar la transcripción como nota
+    if context.user_data.get("modo_notas"):
+        notas = context.user_data.get("notas", [])
+        notas.append({"texto": transcript, "fecha": datetime.now().strftime("%d/%m %H:%M"), "n": len(notas) + 1})
+        context.user_data["notas"] = notas
+        await update.message.reply_text(
+            _notas_status_text(notas), parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD
+        )
+        return
+
     await update.message.reply_text("🤖 Analizando con los agentes...")
 
     try:
