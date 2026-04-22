@@ -1144,30 +1144,44 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo y lo envía aquí
 ARTIFACT_PROMPTS = {
     "planner":        "",  # HTML estático desktop
     "planner_mobile": "",  # HTML estático mobile
-    "notas_onenote": """Eres un asistente que organiza notas en un documento HTML estilo OneNote.
+    "notas_onenote": """Eres un asistente que organiza notas en un documento HTML estilo OneNote, responsive para desktop Y mobile.
 
 El usuario te entrega N notas en texto libre. Tu tarea:
 1. Leer todas las notas y detectar temas en común
 2. Agrupar las notas por tema (si hay temas claros) o mantenerlas cronológicas
-3. Generar un HTML completo y autocontenido que parezca una página de OneNote
+3. Generar un HTML completo, autocontenido y 100% responsive
 
 ESTRUCTURA HTML obligatoria:
-- Fuente: 'Segoe UI', Calibri o DM Sans via Google Fonts
-- Fondo: #f5f5f5 (gris suave como OneNote)
-- Panel izquierdo (200px) con el índice de secciones, color #1e3a5f
-- Contenido principal (fondo blanco, sombra sutil, padding 32px)
-- Header de página con: ícono 📓, título inferido del contenido, fecha y hora
-- Línea horizontal debajo del título (estilo OneNote)
-- Cada sección con: borde izquierdo de color, título de sección en negrita, contenido de las notas
-- Las notas individuales como párrafos con timestamp pequeño arriba en gris
-- Botón "Copiar todo" que copia el texto plano al portapapeles
-- Completamente responsive
+- <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+- Fuente: DM Sans via Google Fonts (wght@400;500;600;700)
+- Colores corporativos Arauco: --gris:#696158  --verde:#BFB800  --naranja:#EA7600  --fondo:#f5f4f0
+
+DESKTOP (min-width: 768px):
+- Layout flex: sidebar izquierdo 200px (fondo #1e3a5f, color blanco) + contenido principal
+- Sidebar: logo 📓, nombre del cuaderno, lista de secciones clicables con punto de color
+- Contenido: fondo blanco, padding 40px, sombra sutil, max-width 760px
+
+MOBILE (max-width: 767px):
+- Sin sidebar — oculto con display:none
+- Header fijo en top: fondo #1e3a5f, título del documento, botón ☰ que abre drawer lateral
+- Drawer: panel lateral deslizable (transform translateX) con las secciones
+- Overlay oscuro al abrir drawer
+- Padding seguro: padding-bottom: env(safe-area-inset-bottom, 16px)
+- Botón flotante "📋 Copiar" fijo en bottom-right
+
+CONTENIDO de cada sección:
+- Título de sección: negrita, borde izquierdo 3px con color único por sección
+- Cada nota: timestamp pequeño arriba en gris, texto en párrafo, separador sutil entre notas
+- Sección final "⚠️ Pendientes" si hay tareas o acciones detectadas en el texto
+
+BOTÓN COPIAR (ambas versiones):
+- Copia texto plano con estructura: título, secciones, notas y timestamps
+- Usa navigator.clipboard.writeText()
+- Toast de confirmación al copiar
 
 IMPORTANTE:
 - Infiere un título relevante para el documento según el contenido
-- Si las notas tienen temas distintos, crea secciones separadas con colores distintos
-- Si son del mismo tema, agrúpalas en una sola sección con flujo narrativo
-- Usa colores corporativos Arauco: #696158 (gris tierra), #BFB800 (verde oliva), #EA7600 (naranja)
+- Usa colores distintos por sección (verde oliva, naranja, gris tierra, azul, etc.)
 - Responde SOLO con el HTML completo, sin texto adicional, sin markdown
 """,
     "html": """Eres el Agente DA de Arauco — Subgerencia de Mejora Continua.
