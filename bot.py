@@ -582,18 +582,28 @@ def push_history(context, user_msg: str, assistant_reply: str):
 
 
 ARTIFACT_KEYBOARD = InlineKeyboardMarkup([[
-    InlineKeyboardButton("📊 Excel",   callback_data="art_excel"),
-    InlineKeyboardButton("🖥️ PPT",    callback_data="art_pptx"),
-    InlineKeyboardButton("📄 PDF",    callback_data="art_pdf"),
+    InlineKeyboardButton("📁 Editables", callback_data="art_menu_editables"),
+    InlineKeyboardButton("📋 Planner",   callback_data="art_menu_planner"),
+    InlineKeyboardButton("📝 Nota",      callback_data="notas_modo"),
+]])
+
+EDITABLES_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
+    InlineKeyboardButton("🖥️ PPT",  callback_data="art_pptx"),
+    InlineKeyboardButton("📄 PDF",  callback_data="art_pdf"),
 ], [
-    InlineKeyboardButton("📅 Gantt",  callback_data="art_gantt"),
-    InlineKeyboardButton("🌐 HTML",   callback_data="art_html"),
-    InlineKeyboardButton("📧 Email",  callback_data="art_email"),
+    InlineKeyboardButton("📅 Gantt", callback_data="art_gantt"),
+    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
+    InlineKeyboardButton("📧 Email", callback_data="art_email"),
 ], [
-    InlineKeyboardButton("📋 Planner MC",     callback_data="art_planner"),
-    InlineKeyboardButton("📱 Planner Mobile", callback_data="art_planner_mobile"),
+    InlineKeyboardButton("← Volver", callback_data="art_menu_back"),
+]])
+
+PLANNER_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("🖥️ Desktop", callback_data="art_planner"),
+    InlineKeyboardButton("📱 Mobile",  callback_data="art_planner_mobile"),
 ], [
-    InlineKeyboardButton("📝 Tomar nota",     callback_data="notas_modo"),
+    InlineKeyboardButton("← Volver",   callback_data="art_menu_back"),
 ]])
 
 NOTAS_KEYBOARD = InlineKeyboardMarkup([[
@@ -1062,6 +1072,18 @@ async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
     artifact_type = query.data.replace("art_", "")
+
+    # Navegación de menús
+    if artifact_type == "menu_editables":
+        await query.edit_message_reply_markup(reply_markup=EDITABLES_KEYBOARD)
+        return
+    if artifact_type == "menu_planner":
+        await query.edit_message_reply_markup(reply_markup=PLANNER_KEYBOARD)
+        return
+    if artifact_type == "menu_back":
+        await query.edit_message_reply_markup(reply_markup=ARTIFACT_KEYBOARD)
+        return
+
     last_analysis = context.user_data.get("last_analysis", "")
 
     _static_types = {"planner", "planner_mobile"}
