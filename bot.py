@@ -7,6 +7,7 @@ import uuid
 import base64
 import threading
 import tempfile
+from datetime import datetime
 import anthropic
 import groq as groq_lib
 import rag
@@ -818,13 +819,13 @@ async def _render_artifact(artifact_type: str, description: str,
         )
         return
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 8000}
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     raw = claude_response(prompt, description,
                           max_tokens=_tokens_map.get(artifact_type, 4000),
                           model="claude-sonnet-4-6")
     try:
-        if artifact_type == "html":
+        if artifact_type in ("html", "notas_onenote"):
             html = raw.strip()
             if html.startswith("```"):
                 html = html.split("\n", 1)[-1]
@@ -835,8 +836,12 @@ async def _render_artifact(artifact_type: str, description: str,
                 await reply_fn("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
             url = store_html(html)
-            await reply_fn(f"🌲 <b>Dashboard interactivo listo</b>\n\nToca el enlace:\n{url}",
-                           parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD)
+            if artifact_type == "notas_onenote":
+                await reply_fn(f"📓 <b>Documento OneNote listo</b>\n\nToca el enlace para abrirlo:\n{url}",
+                               parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD)
+            else:
+                await reply_fn(f"🌲 <b>Dashboard interactivo listo</b>\n\nToca el enlace:\n{url}",
+                               parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD)
             return
         elif artifact_type == "excel":
             data = extract_json(raw)
@@ -922,6 +927,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Intercepta guardado de nota
+    _nota_kw = ("nota:", "nota ", "apunta:", "apunta ", "anota:", "anota ", "registra:", "registra ")
+    if user_msg.lower().startswith(_nota_kw):
+        sep = ":" if ":" in user_msg.split()[0] else " "
+        content = user_msg.split(sep, 1)[-1].strip() if sep in user_msg else user_msg[6:].strip()
+        if content:
+            notas = context.user_data.get("notas", [])
+            notas.append({"texto": content, "fecha": datetime.now().strftime("%d/%m %H:%M"), "n": len(notas) + 1})
+            context.user_data["notas"] = notas
+            n = len(notas)
+            txt = f"📝 *Nota {n} guardada.*"
+            if n >= 2:
+                kb = InlineKeyboardMarkup([[
+                    InlineKeyboardButton(f"📓 Juntar {n} notas en OneNote", callback_data="notas_join"),
+                    InlineKeyboardButton("🗑 Borrar", callback_data="notas_clear"),
+                ]])
+                await update.message.reply_text(txt, parse_mode="Markdown", reply_markup=kb)
+            else:
+                await update.message.reply_text(
+                    txt + "\n_Escribe otra nota para poder juntarlas en un documento._",
+                    parse_mode="Markdown"
+                )
+            return
+
     # Detecta intención de artefacto y genera directamente usando todo el contexto disponible
     artifact_intent = _detect_artifact_intent(user_msg)
     if artifact_intent and artifact_intent in ARTIFACT_PROMPTS:
@@ -967,6 +996,30 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["last_analysis"] = analysis
 
     await send_reply(update, analysis, reply_markup=ARTIFACT_KEYBOARD)
+
+
+async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if query.data == "notas_clear":
+        context.user_data.pop("notas", None)
+        await query.edit_message_text("🗑 Notas borradas.")
+        return
+
+    # notas_join
+    notas = context.user_data.get("notas", [])
+    if not notas:
+        await query.edit_message_text("⚠️ No hay notas guardadas.")
+        return
+
+    await query.edit_message_reply_markup(reply_markup=None)
+    await query.message.reply_text(f"⏳ Organizando *{len(notas)} notas* en documento OneNote...", parse_mode="Markdown")
+
+    notas_txt = "\n\n".join([f"[Nota {n['n']} — {n['fecha']}]\n{n['texto']}" for n in notas])
+    description = f"{len(notas)} notas para organizar:\n\n{notas_txt}"
+
+    await _render_artifact("notas_onenote", description, _make_reply_fn(query.message), context)
 
 
 async def artifact_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1034,6 +1087,32 @@ ARTIFACT_HELP = """🎨 */artifact* — Genera un archivo y lo envía aquí
 ARTIFACT_PROMPTS = {
     "planner":        "",  # HTML estático desktop
     "planner_mobile": "",  # HTML estático mobile
+    "notas_onenote": """Eres un asistente que organiza notas en un documento HTML estilo OneNote.
+
+El usuario te entrega N notas en texto libre. Tu tarea:
+1. Leer todas las notas y detectar temas en común
+2. Agrupar las notas por tema (si hay temas claros) o mantenerlas cronológicas
+3. Generar un HTML completo y autocontenido que parezca una página de OneNote
+
+ESTRUCTURA HTML obligatoria:
+- Fuente: 'Segoe UI', Calibri o DM Sans via Google Fonts
+- Fondo: #f5f5f5 (gris suave como OneNote)
+- Panel izquierdo (200px) con el índice de secciones, color #1e3a5f
+- Contenido principal (fondo blanco, sombra sutil, padding 32px)
+- Header de página con: ícono 📓, título inferido del contenido, fecha y hora
+- Línea horizontal debajo del título (estilo OneNote)
+- Cada sección con: borde izquierdo de color, título de sección en negrita, contenido de las notas
+- Las notas individuales como párrafos con timestamp pequeño arriba en gris
+- Botón "Copiar todo" que copia el texto plano al portapapeles
+- Completamente responsive
+
+IMPORTANTE:
+- Infiere un título relevante para el documento según el contenido
+- Si las notas tienen temas distintos, crea secciones separadas con colores distintos
+- Si son del mismo tema, agrúpalas en una sola sección con flujo narrativo
+- Usa colores corporativos Arauco: #696158 (gris tierra), #BFB800 (verde oliva), #EA7600 (naranja)
+- Responde SOLO con el HTML completo, sin texto adicional, sin markdown
+""",
     "html": """Eres el Agente DA de Arauco — Subgerencia de Mejora Continua.
 Genera un dashboard HTML interactivo y autocontenido.
 
@@ -2455,6 +2534,7 @@ app.add_handler(CommandHandler("buscar",     buscar_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
 app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
 app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel|edit.*)$"))
+app.add_handler(CallbackQueryHandler(notas_callback,        pattern="^notas_"))
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
