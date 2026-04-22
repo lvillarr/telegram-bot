@@ -1634,7 +1634,7 @@ def build_pdf(data: dict) -> io.BytesIO:
         SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
         HRFlowable, KeepTogether
     )
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
+    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT, TA_JUSTIFY
 
     GRIS    = colors.HexColor("#696158")
     VERDE   = colors.HexColor("#BFB800")
@@ -1653,12 +1653,12 @@ def build_pdf(data: dict) -> io.BytesIO:
     )
 
     # Estilos
-    s_titulo  = ParagraphStyle("titulo",  fontName="Helvetica-Bold",   fontSize=18, textColor=GRIS,  spaceAfter=4*mm)
-    s_sub     = ParagraphStyle("sub",     fontName="Helvetica",        fontSize=10, textColor=GRIS_L, spaceAfter=8*mm)
+    s_titulo  = ParagraphStyle("titulo",  fontName="Helvetica-Bold",   fontSize=18, textColor=GRIS,  leading=26, spaceAfter=4*mm)
+    s_sub     = ParagraphStyle("sub",     fontName="Helvetica",        fontSize=10, textColor=GRIS_L, leading=15, spaceAfter=8*mm)
     s_meta    = ParagraphStyle("meta",    fontName="Helvetica",        fontSize=8,  textColor=GRIS_L, spaceAfter=4*mm)
-    s_seccion = ParagraphStyle("seccion", fontName="Helvetica-Bold",   fontSize=12, textColor=GRIS,  spaceBefore=8*mm, spaceAfter=4*mm, borderPad=2, leftIndent=4*mm)
-    s_body    = ParagraphStyle("body",    fontName="Helvetica",        fontSize=9,  textColor=NEGRO, leading=16, spaceAfter=5*mm)
-    s_concl   = ParagraphStyle("concl",   fontName="Helvetica-Oblique",fontSize=9,  textColor=NEGRO, leading=16, spaceAfter=5*mm)
+    s_seccion = ParagraphStyle("seccion", fontName="Helvetica-Bold",   fontSize=12, textColor=GRIS,  leading=18, spaceBefore=8*mm, spaceAfter=4*mm, borderPad=2, leftIndent=4*mm)
+    s_body    = ParagraphStyle("body",    fontName="Helvetica",        fontSize=9,  textColor=NEGRO, leading=14, alignment=TA_JUSTIFY, spaceAfter=5*mm)
+    s_concl   = ParagraphStyle("concl",   fontName="Helvetica-Oblique",fontSize=9,  textColor=NEGRO, leading=14, alignment=TA_JUSTIFY, spaceAfter=5*mm)
     s_footer  = ParagraphStyle("footer",  fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER)
     s_kpi_val = ParagraphStyle("kpi_val", fontName="Helvetica-Bold",   fontSize=16, textColor=GRIS,  alignment=TA_CENTER, leading=18)
     s_kpi_lbl = ParagraphStyle("kpi_lbl", fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER, spaceAfter=0)
@@ -1707,10 +1707,25 @@ def build_pdf(data: dict) -> io.BytesIO:
     if resumen:
         story.append(Paragraph("Resumen Ejecutivo", s_seccion))
         story.append(HRFlowable(width="100%", thickness=1, color=VERDE, spaceAfter=3*mm))
-        for parr in resumen.split("\n\n"):
-            parr = parr.strip()
-            if parr:
-                story.append(Paragraph(parr, s_body))
+        s_resumen = ParagraphStyle("resumen", fontName="Helvetica", fontSize=9,
+                                   textColor=NEGRO, leading=14, alignment=TA_JUSTIFY,
+                                   spaceAfter=4*mm)
+        page_w = A4[0] - 40*mm
+        parrafos = [Paragraph(p.strip(), s_resumen)
+                    for p in resumen.split("\n\n") if p.strip()]
+        resumen_inner = [[parrafos]]
+        resumen_table = Table(resumen_inner, colWidths=[page_w])
+        resumen_table.setStyle(TableStyle([
+            ("BACKGROUND",    (0,0), (-1,-1), CREMA),
+            ("BOX",           (0,0), (-1,-1), 0,    CREMA),
+            ("LEFTPADDING",   (0,0), (-1,-1), 8),
+            ("RIGHTPADDING",  (0,0), (-1,-1), 8),
+            ("TOPPADDING",    (0,0), (-1,-1), 6),
+            ("BOTTOMPADDING", (0,0), (-1,-1), 6),
+            ("LINEBELOW",     (0,0), (-1,0),  2, VERDE),
+        ]))
+        story.append(resumen_table)
+        story.append(Spacer(1, 4*mm))
 
     # ── SECCIONES ───────────────────────────────────────────
     for sec in data.get("secciones", []):
