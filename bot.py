@@ -670,6 +670,8 @@ NOTAS_POST_KEYBOARD = InlineKeyboardMarkup([[
 ], [
     InlineKeyboardButton("📓 → Word (OneNote)",  callback_data="notas_docx"),
     InlineKeyboardButton("🗑 Borrar notas",       callback_data="notas_clear"),
+], [
+    InlineKeyboardButton("✅ Salir del modo notas", callback_data="notas_salir"),
 ]])
 
 IMAGE_PENDING_KEYBOARD = InlineKeyboardMarkup([[
