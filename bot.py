@@ -621,6 +621,17 @@ NOTAS_POST_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("🗑 Borrar notas",       callback_data="notas_clear"),
 ]])
 
+IMAGE_PENDING_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("🔍 Analizar imagen",   callback_data="img_analizar"),
+], [
+    InlineKeyboardButton("📊 Excel",  callback_data="img_art_excel"),
+    InlineKeyboardButton("🌐 HTML",   callback_data="img_art_html"),
+    InlineKeyboardButton("📄 PDF",    callback_data="img_art_pdf"),
+], [
+    InlineKeyboardButton("🖥️ PPT",    callback_data="img_art_pptx"),
+    InlineKeyboardButton("📅 Gantt",  callback_data="img_art_gantt"),
+]])
+
 DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
     InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
@@ -1014,25 +1025,85 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     file = await context.bot.get_file(photo.file_id)
     file_bytes = await file.download_as_bytearray()
     image_b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
-    caption = update.message.caption or "Analiza esta imagen en el contexto operacional forestal de Arauco. Identifica equipos, procesos, problemas o métricas relevantes."
+    caption = update.message.caption or ""
 
+    context.user_data["pending_image"] = {
+        "b64": image_b64,
+        "media_type": "image/jpeg",
+        "caption": caption,
+    }
+    await update.message.reply_text(
+        "🖼 *Imagen recibida.*\n\n¿Qué hacemos con ella?",
+        parse_mode="Markdown",
+        reply_markup=IMAGE_PENDING_KEYBOARD,
+    )
+
+
+async def _analyze_image(context) -> str | None:
+    """Llama a Claude con la imagen pendiente; guarda y devuelve el análisis."""
+    img = context.user_data.get("pending_image")
+    if not img:
+        return None
+    caption = img.get("caption") or (
+        "Analiza esta imagen en el contexto operacional forestal de Arauco. "
+        "Identifica equipos, procesos, problemas o métricas relevantes."
+    )
     response = client.messages.create(
         model=get_model(context),
-        max_tokens=512,
+        max_tokens=1024,
         system=SYSTEM_PROMPT,
         messages=[{
             "role": "user",
             "content": [
-                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
-                {"type": "text", "text": caption}
-            ]
-        }]
+                {"type": "image", "source": {"type": "base64",
+                                             "media_type": img["media_type"],
+                                             "data": img["b64"]}},
+                {"type": "text", "text": caption},
+            ],
+        }],
     )
     analysis = response.content[0].text
     push_history(context, caption, analysis)
     context.user_data["last_analysis"] = analysis
+    return analysis
 
-    await send_reply(update, analysis, reply_markup=ARTIFACT_KEYBOARD)
+
+async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    if not context.user_data.get("pending_image"):
+        await query.edit_message_text("⚠️ No hay imagen pendiente.")
+        return
+
+    if query.data == "img_analizar":
+        await query.edit_message_text("⏳ Analizando imagen...")
+        analysis = await _analyze_image(context)
+        try:
+            await query.message.reply_text(
+                fmt(analysis) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
+                parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD,
+            )
+        except Exception:
+            await query.message.reply_text(
+                analysis + "\n\n🎨 ¿Generar un artefacto visual con esto?",
+                reply_markup=ARTIFACT_KEYBOARD,
+            )
+        return
+
+    # img_art_<tipo>
+    art_type = query.data.replace("img_art_", "")
+    if art_type not in ARTIFACT_PROMPTS:
+        await query.answer("Tipo de artefacto no reconocido.", show_alert=True)
+        return
+
+    await query.edit_message_text(f"⏳ Analizando imagen y generando *{art_type}*...",
+                                  parse_mode="Markdown")
+    analysis = await _analyze_image(context)
+    if not analysis:
+        await query.message.reply_text("⚠️ No se pudo analizar la imagen.")
+        return
+    await _render_artifact(art_type, analysis, _make_reply_fn(query.message), context)
 
 
 def _notas_status_text(notas: list) -> str:
@@ -2771,6 +2842,7 @@ app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
 app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
 app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel|edit.*)$"))
 app.add_handler(CallbackQueryHandler(notas_callback,        pattern="^notas_"))
+app.add_handler(CallbackQueryHandler(image_callback,        pattern="^img_"))
 
 for skill in SKILL_PROMPTS:
     app.add_handler(CommandHandler(skill, skill_handler))
