@@ -632,6 +632,7 @@ IMAGE_PENDING_KEYBOARD = InlineKeyboardMarkup([[
 ], [
     InlineKeyboardButton("🖥️ PPT",    callback_data="img_art_pptx"),
     InlineKeyboardButton("📅 Gantt",  callback_data="img_art_gantt"),
+    InlineKeyboardButton("📧 Email",  callback_data="img_art_email"),
 ]])
 
 DOC_KEYBOARD = InlineKeyboardMarkup([[
@@ -929,7 +930,7 @@ def _make_reply_fn(message):
     return reply_fn
 
 
-def _email_preview(data: dict) -> str:
+def _email_preview(data: dict, n_adjuntos: int = 0) -> str:
     lines = [
         f"📧 <b>Borrador de correo</b>\n",
         f"<b>Para:</b> {_html.escape(data.get('para', ''))}",
@@ -938,6 +939,8 @@ def _email_preview(data: dict) -> str:
         lines.append(f"<b>CC:</b> {_html.escape(data['cc'])}")
     lines.append(f"<b>Asunto:</b> {_html.escape(data.get('asunto', ''))}\n")
     lines.append(_html.escape(data.get("cuerpo", "")))
+    if n_adjuntos:
+        lines.append(f"\n📎 <i>{n_adjuntos} imagen(es) adjunta(s)</i>")
     return "\n".join(lines)
 
 
@@ -950,8 +953,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         draft = context.user_data.get("pending_email", {})
         draft[campo] = user_msg.strip()
         context.user_data["pending_email"] = draft
+        n_adj = context.user_data.get("email_n_adjuntos", 0)
         await update.message.reply_text(
-            _email_preview(draft), parse_mode="HTML",
+            _email_preview(draft, n_adj), parse_mode="HTML",
             reply_markup=EMAIL_CONFIRM_KEYBOARD
         )
         return
@@ -962,8 +966,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         draft = context.user_data.get("pending_email", {})
         draft["para"] = user_msg.strip()
         context.user_data["pending_email"] = draft
+        n_adj = context.user_data.get("email_n_adjuntos", 0)
         await update.message.reply_text(
-            _email_preview(draft), parse_mode="HTML",
+            _email_preview(draft, n_adj), parse_mode="HTML",
             reply_markup=EMAIL_CONFIRM_KEYBOARD
         )
         return
@@ -1121,6 +1126,10 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"⏳ Analizando imagen y generando *{art_type}*...",
                                   parse_mode="Markdown")
     analysis = await _analyze_image(context)
+    if art_type == "email":
+        images = context.user_data.get("pending_images", [])
+        context.user_data["email_attachments"] = list(images)
+        context.user_data["email_n_adjuntos"] = len(images)
     context.user_data.pop("pending_images", None)
     if not analysis:
         await query.message.reply_text("⚠️ No se pudo analizar la imagen.")
@@ -2243,6 +2252,16 @@ def send_email_outlook(data: dict) -> None:
     }
     if data.get("cc"):
         payload["personalizations"][0]["cc"] = [{"email": data["cc"]}]
+    if data.get("adjuntos"):
+        payload["attachments"] = [
+            {
+                "content":     img["b64"],
+                "filename":    f"imagen-{i + 1}.jpg",
+                "type":        img.get("media_type", "image/jpeg"),
+                "disposition": "attachment",
+            }
+            for i, img in enumerate(data["adjuntos"])
+        ]
 
     resp = requests.post(
         "https://api.sendgrid.com/v3/mail/send",
@@ -2677,13 +2696,17 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text("⚠️ No hay correo pendiente.")
         return
 
+    data["adjuntos"] = context.user_data.pop("email_attachments", [])
     await query.message.reply_text("⏳ Enviando correo...")
     try:
         send_email_outlook(data)
         context.user_data.pop("pending_email", None)
+        context.user_data.pop("email_n_adjuntos", None)
+        n_adj = len(data["adjuntos"])
+        adj_txt = f"\n📎 {n_adj} imagen(es) adjunta(s)" if n_adj else ""
         await query.message.reply_text(
             f"✅ Correo enviado a <b>{_html.escape(data['para'])}</b>\n"
-            f"<b>Asunto:</b> {_html.escape(data['asunto'])}",
+            f"<b>Asunto:</b> {_html.escape(data['asunto'])}{adj_txt}",
             parse_mode="HTML"
         )
     except Exception as e:
