@@ -82,7 +82,7 @@ class _HTMLHandler(BaseHTTPRequestHandler):
         elif path.startswith("/g/"):
             gid  = path[3:]
             if not re.fullmatch(r"[0-9a-f]{32}", gid):
-                self._respond(400, b"ID inválido.", "text/plain")
+                self._respond(400, b"ID invalido.", "text/plain")
                 return
             html = _HTML_STORE.get(gid)
             if html:
