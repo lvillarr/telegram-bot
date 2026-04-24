@@ -5,6 +5,7 @@ import json
 import time
 import uuid
 import base64
+import asyncio
 import threading
 import tempfile
 from datetime import datetime
@@ -24,6 +25,7 @@ from telegram.ext import ContextTypes
 # ── Servidor HTTP (hilo de fondo) para servir HTML como URL pública ──────────
 _HTML_STORE: OrderedDict = OrderedDict()   # uuid → html_string (máx 100 entradas)
 _MAX_STORE  = 100
+_img_debounce: dict = {}                   # user_id → asyncio.Task
 _HTTP_PORT  = int(os.environ.get("PORT", 8080))
 PUBLIC_BASE = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
 PUBLIC_BASE = f"https://{PUBLIC_BASE}" if PUBLIC_BASE else f"http://localhost:{_HTTP_PORT}"
@@ -1030,44 +1032,55 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     images = context.user_data.get("pending_images", [])
     images.append({"b64": image_b64, "media_type": "image/jpeg", "caption": caption})
     context.user_data["pending_images"] = images
-    # pending_image apunta siempre a la primera (la que _analyze_image usará por defecto)
     context.user_data["pending_image"] = images[0]
 
-    if len(images) == 1:
-        await update.message.reply_text(
-            "🖼 *Imagen recibida.*\n\n¿Qué hacemos con ella?",
+    user_id = update.effective_user.id
+    message  = update.message
+
+    # Cancela el timer anterior y reinicia (debounce 1.5 s)
+    prev = _img_debounce.get(user_id)
+    if prev and not prev.done():
+        prev.cancel()
+
+    async def _show_keyboard():
+        await asyncio.sleep(1.5)
+        n = len(context.user_data.get("pending_images", []))
+        label = "imagen recibida" if n == 1 else f"{n} imágenes recibidas"
+        await message.reply_text(
+            f"🖼 *{label.capitalize()}.*\n\n¿Qué hacemos con {'ella' if n == 1 else 'ellas'}?",
             parse_mode="Markdown",
             reply_markup=IMAGE_PENDING_KEYBOARD,
         )
-    else:
-        await update.message.reply_text(
-            f"🖼 Imagen {len(images)} agregada.",
-            parse_mode="Markdown",
-        )
+
+    _img_debounce[user_id] = asyncio.create_task(_show_keyboard())
 
 
 async def _analyze_image(context) -> str | None:
-    """Llama a Claude con la imagen pendiente; guarda y devuelve el análisis."""
-    img = context.user_data.get("pending_image")
-    if not img:
-        return None
-    caption = img.get("caption") or (
-        "Analiza esta imagen en el contexto operacional forestal de Arauco. "
+    """Llama a Claude con todas las imágenes pendientes; guarda y devuelve el análisis."""
+    images = context.user_data.get("pending_images") or []
+    if not images:
+        img = context.user_data.get("pending_image")
+        if not img:
+            return None
+        images = [img]
+
+    caption = next((i["caption"] for i in images if i.get("caption")), "") or (
+        "Analiza estas imágenes en el contexto operacional forestal de Arauco. "
         "Identifica equipos, procesos, problemas o métricas relevantes."
     )
+    content = [
+        {"type": "image", "source": {"type": "base64",
+                                     "media_type": i["media_type"],
+                                     "data": i["b64"]}}
+        for i in images
+    ]
+    content.append({"type": "text", "text": caption})
+
     response = client.messages.create(
         model=get_model(context),
         max_tokens=1024,
         system=SYSTEM_PROMPT,
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64",
-                                             "media_type": img["media_type"],
-                                             "data": img["b64"]}},
-                {"type": "text", "text": caption},
-            ],
-        }],
+        messages=[{"role": "user", "content": content}],
     )
     analysis = response.content[0].text
     push_history(context, caption, analysis)
