@@ -613,6 +613,14 @@ NOTAS_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("✅ Salir del modo notas", callback_data="notas_salir"),
 ]])
 
+NOTAS_POST_KEYBOARD = InlineKeyboardMarkup([[
+    InlineKeyboardButton("✏️ Editar",            callback_data="notas_editar"),
+    InlineKeyboardButton("📄 → PDF",             callback_data="notas_pdf"),
+], [
+    InlineKeyboardButton("📓 → Word (OneNote)",  callback_data="notas_docx"),
+    InlineKeyboardButton("🗑 Borrar notas",       callback_data="notas_clear"),
+]])
+
 DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📊 Excel", callback_data="art_excel"),
     InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
@@ -856,8 +864,9 @@ async def _render_artifact(artifact_type: str, description: str,
                 return
             url = store_html(html)
             if artifact_type == "notas_onenote":
-                await reply_fn(f"📓 <b>Documento OneNote listo</b>\n\nToca el enlace para abrirlo:\n{url}",
-                               parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD)
+                context.user_data["last_notas_data"] = context.user_data.get("notas", [])
+                await reply_fn(f"📓 <b>Documento listo</b>\n\nToca el enlace para abrirlo:\n{url}",
+                               parse_mode="HTML", reply_markup=NOTAS_POST_KEYBOARD)
             else:
                 await reply_fn(f"🌲 <b>Dashboard interactivo listo</b>\n\nToca el enlace:\n{url}",
                                parse_mode="HTML", reply_markup=ARTIFACT_KEYBOARD)
@@ -944,6 +953,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             _email_preview(draft), parse_mode="HTML",
             reply_markup=EMAIL_CONFIRM_KEYBOARD
         )
+        return
+
+    # ── Modo edición de notas: instrucciones para re-generar el HTML ──
+    if context.user_data.get("modo_editar_notas"):
+        context.user_data.pop("modo_editar_notas", None)
+        notas_txt = context.user_data.get("last_notas_txt", "")
+        if not notas_txt:
+            await update.message.reply_text("⚠️ No hay documento base para editar.")
+            return
+        description = (
+            f"[INSTRUCCIÓN DE EDICIÓN]: {user_msg}\n\n"
+            f"[NOTAS ORIGINALES]:\n{notas_txt}"
+        )
+        await update.message.reply_text("⏳ Aplicando edición al documento...")
+        await _render_artifact("notas_onenote", description, _make_reply_fn(update.message), context)
         return
 
     # ── Modo notas: cualquier mensaje se guarda como nota ──
@@ -1051,6 +1075,48 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("🗑 Notas borradas.")
         return
 
+    if query.data == "notas_editar":
+        notas = context.user_data.get("last_notas_data") or context.user_data.get("notas", [])
+        if not notas:
+            await query.answer("⚠️ No hay documento generado para editar.", show_alert=True)
+            return
+        context.user_data["modo_editar_notas"] = True
+        await query.message.reply_text(
+            "✏️ *Modo edición activo*\n\n"
+            "Escribe las instrucciones de edición, por ejemplo:\n"
+            "• _«agrega una sección de conclusiones»_\n"
+            "• _«nota 3: nuevo texto corregido»_\n"
+            "• _«cambia el título a Reunión Q2»_",
+            parse_mode="Markdown"
+        )
+        return
+
+    if query.data == "notas_pdf":
+        notas = context.user_data.get("last_notas_data") or context.user_data.get("notas", [])
+        if not notas:
+            await query.answer("⚠️ No hay notas para exportar.", show_alert=True)
+            return
+        await query.message.reply_text("⏳ Generando PDF...")
+        titulo = f"Notas — {datetime.now().strftime('%d/%m/%Y')}"
+        buf = build_notas_pdf(notas, titulo)
+        filename = f"notas-arauco-{datetime.now().strftime('%Y%m%d')}.pdf"
+        await query.message.reply_document(document=buf, filename=filename,
+                                           caption="📄 Notas en PDF — Arauco Mejora Continua")
+        return
+
+    if query.data == "notas_docx":
+        notas = context.user_data.get("last_notas_data") or context.user_data.get("notas", [])
+        if not notas:
+            await query.answer("⚠️ No hay notas para exportar.", show_alert=True)
+            return
+        await query.message.reply_text("⏳ Generando Word...")
+        titulo = f"Notas — {datetime.now().strftime('%d/%m/%Y')}"
+        buf = build_notas_docx(notas, titulo)
+        filename = f"notas-arauco-{datetime.now().strftime('%Y%m%d')}.docx"
+        await query.message.reply_document(document=buf, filename=filename,
+                                           caption="📓 Notas en Word — importa este archivo en OneNote")
+        return
+
     # notas_join
     notas = context.user_data.get("notas", [])
     if not notas:
@@ -1062,6 +1128,7 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.message.reply_text(f"⏳ Organizando *{len(notas)} notas* en documento OneNote...", parse_mode="Markdown")
 
     notas_txt = "\n\n".join([f"[Nota {n['n']} — {n['fecha']}]\n{n['texto']}" for n in notas])
+    context.user_data["last_notas_txt"] = notas_txt
     description = f"{len(notas)} notas para organizar:\n\n{notas_txt}"
 
     await _render_artifact("notas_onenote", description, _make_reply_fn(query.message), context)
@@ -1792,6 +1859,78 @@ def build_pdf(data: dict) -> io.BytesIO:
     ))
 
     doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def build_notas_pdf(notas: list, titulo: str = "Notas") -> io.BytesIO:
+    """PDF directo desde lista de notas — sin llamada a Claude."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
+    from reportlab.lib.enums import TA_JUSTIFY
+
+    GRIS   = colors.HexColor("#696158")
+    NEGRO  = colors.HexColor("#222222")
+    GRIS_L = colors.HexColor("#999999")
+    SEP    = colors.HexColor("#DDDDDD")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=20*mm, rightMargin=20*mm,
+                            topMargin=18*mm, bottomMargin=18*mm,
+                            title=titulo)
+
+    s_titulo = ParagraphStyle("titulo", fontName="Helvetica-Bold", fontSize=16,
+                               textColor=GRIS, leading=22, spaceAfter=3*mm)
+    s_meta   = ParagraphStyle("meta",   fontName="Helvetica", fontSize=8,
+                               textColor=GRIS_L, spaceAfter=5*mm)
+    s_ts     = ParagraphStyle("ts",     fontName="Helvetica", fontSize=8,
+                               textColor=GRIS_L, spaceAfter=1*mm)
+    s_body   = ParagraphStyle("body",   fontName="Helvetica", fontSize=9,
+                               textColor=NEGRO, leading=14, alignment=TA_JUSTIFY,
+                               spaceAfter=4*mm)
+
+    story = []
+    story.append(Paragraph(titulo, s_titulo))
+    story.append(Paragraph(
+        f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;|&nbsp; "
+        f"{len(notas)} nota(s) &nbsp;|&nbsp; Arauco — Mejora Continua",
+        s_meta
+    ))
+    story.append(HRFlowable(width="100%", thickness=2, color=GRIS, spaceAfter=5*mm))
+
+    for n in notas:
+        story.append(Paragraph(f"Nota {n['n']} — {n['fecha']}", s_ts))
+        body_text = n['texto'].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        story.append(Paragraph(body_text, s_body))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=SEP, spaceAfter=3*mm))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def build_notas_docx(notas: list, titulo: str = "Notas") -> io.BytesIO:
+    """Word (.docx) desde lista de notas — formato compatible con importación en OneNote."""
+    doc = DocxDocument()
+
+    doc.add_heading(titulo, 0)
+    doc.add_paragraph(
+        f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  "
+        f"{len(notas)} nota(s)  |  Arauco — Mejora Continua"
+    )
+    doc.add_paragraph("")
+
+    for n in notas:
+        doc.add_heading(f"Nota {n['n']} — {n['fecha']}", level=2)
+        doc.add_paragraph(n['texto'])
+        doc.add_paragraph("")
+
+    buf = io.BytesIO()
+    doc.save(buf)
     buf.seek(0)
     return buf
 
