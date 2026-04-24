@@ -6,6 +6,7 @@ import time
 import uuid
 import base64
 import asyncio
+import logging
 import threading
 import tempfile
 from datetime import datetime
@@ -558,8 +559,10 @@ def _get_logo_bytes() -> bytes | None:
             r = _req.get(_ARAUCO_LOGO_URL, timeout=5)
             if r.status_code == 200:
                 _ARAUCO_LOGO_BYTES = r.content
-        except Exception:
-            pass
+            else:
+                logging.warning("Logo Arauco: HTTP %s", r.status_code)
+        except Exception as e:
+            logging.warning("Logo Arauco no disponible: %s", e)
     return _ARAUCO_LOGO_BYTES
 
 
@@ -571,16 +574,22 @@ def trim_history(history: list) -> list:
 def _safe_err(e: Exception) -> str:
     """Retorna mensaje de error seguro para mostrar al usuario sin exponer internals."""
     msg = str(e)
-    for secret in ("api_key", "apikey", "token", "password", "Bearer", "secret"):
-        if secret.lower() in msg.lower():
+    # Redactar si hay credenciales en el mensaje
+    for secret in ("api_key", "apikey", "token", "password", "bearer", "secret", "authorization"):
+        if secret in msg.lower():
             return "Error interno del servidor."
-    sanitized = re.sub(r"/[^\s]*", "[ruta]", msg)
-    return sanitized[:180]
+    # Redactar URLs y rutas de archivo
+    msg = re.sub(r"https?://\S+", "[URL]", msg)
+    msg = re.sub(r"/[\w/.\-]+", "[ruta]", msg)
+    return msg[:180]
 
 
 def _cached_system(system: str) -> list:
     """Wraps a system prompt string with cache_control for prompt caching."""
     return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
+# Pre-computado para evitar recrear el dict en cada llamada
+_CACHED_SYSTEM_PROMPT: list | None = None
 
 
 _EFFORT_MODELS = {"claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-7"}
@@ -604,18 +613,15 @@ def claude_response(system: str, user_msg: str, max_tokens: int = 512,
     if model in _EFFORT_MODELS:
         kwargs["output_config"] = {"effort": effort}
 
-    last_error = None
     for attempt in range(3):
         try:
             response = client.messages.create(**kwargs)
             return response.content[0].text
         except anthropic.APIStatusError as e:
-            last_error = e
             if e.status_code == 500 and attempt < 2:
                 time.sleep(2 ** attempt)
                 continue
             raise
-    raise last_error
 
 
 def push_history(context, user_msg: str, assistant_reply: str):
@@ -1014,7 +1020,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("waiting_email_recipient"):
         context.user_data.pop("waiting_email_recipient")
         recipient = user_msg.strip()
-        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient):
+        if not re.fullmatch(r"[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}", recipient):
             await update.message.reply_text("⚠️ El correo ingresado no parece válido. Intenta de nuevo.")
             context.user_data["waiting_email_recipient"] = True
             return
@@ -1072,7 +1078,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         history    = context.user_data.get("history", [])
-        rag_ctx    = rag.build_context(user_msg)
+        rag_ctx    = rag.build_context(user_msg) if rag.col.count() > 0 else ""
         system     = SYSTEM_PROMPT + rag_ctx
         reply = claude_response(system, user_msg, model=get_model_for_msg(context, user_msg), history=history)
         push_history(context, user_msg, reply)
@@ -1085,7 +1091,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     photo = update.message.photo[-1]
     file = await context.bot.get_file(photo.file_id)
-    file_bytes = await file.download_as_bytearray()
+    file_bytes = await asyncio.wait_for(file.download_as_bytearray(), timeout=30.0)
     image_b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
     caption = update.message.caption or ""
 
@@ -1739,7 +1745,10 @@ def extract_json(raw: str) -> dict:
     end   = text.rfind("}")
     if start != -1 and end != -1 and end > start:
         text = text[start:end+1]
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"JSON inválido en respuesta del modelo: {exc}") from exc
 
 
 def store_html(html: str) -> str:
@@ -2983,7 +2992,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         history  = context.user_data.get("history", [])
-        rag_ctx  = rag.build_context(transcript)
+        rag_ctx  = rag.build_context(transcript) if rag.col.count() > 0 else ""
         system   = SYSTEM_PROMPT + rag_ctx
         reply = claude_response(system, transcript, max_tokens=600,
                                 model=get_model_for_msg(context, transcript), history=history)
