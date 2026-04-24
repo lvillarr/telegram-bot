@@ -81,6 +81,9 @@ class _HTMLHandler(BaseHTTPRequestHandler):
             self._respond(200, _ARAUCO_CSS.encode("utf-8"), "text/css; charset=utf-8")
         elif path.startswith("/g/"):
             gid  = path[3:]
+            if not re.fullmatch(r"[0-9a-f]{32}", gid):
+                self._respond(400, b"ID inválido.", "text/plain")
+                return
             html = _HTML_STORE.get(gid)
             if html:
                 data = html.encode("utf-8")
@@ -543,28 +546,68 @@ groq_client = groq_lib.Groq(api_key=os.environ["GROQ_API_KEY"])
 
 MAX_HISTORY = 20  # máximo de mensajes (turnos usuario+asistente) a conservar
 
+_ARAUCO_LOGO_URL   = "https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png"
+_ARAUCO_LOGO_BYTES: bytes | None = None
+
+def _get_logo_bytes() -> bytes | None:
+    """Descarga y cachea el logo Arauco (blanco PNG). Retorna None si falla."""
+    global _ARAUCO_LOGO_BYTES
+    if _ARAUCO_LOGO_BYTES is None:
+        try:
+            import requests as _req
+            r = _req.get(_ARAUCO_LOGO_URL, timeout=5)
+            if r.status_code == 200:
+                _ARAUCO_LOGO_BYTES = r.content
+        except Exception:
+            pass
+    return _ARAUCO_LOGO_BYTES
+
 
 def trim_history(history: list) -> list:
     """Mantiene solo los últimos MAX_HISTORY mensajes (par usuario/asistente)."""
     return history[-MAX_HISTORY:]
 
 
+def _safe_err(e: Exception) -> str:
+    """Retorna mensaje de error seguro para mostrar al usuario sin exponer internals."""
+    msg = str(e)
+    for secret in ("api_key", "apikey", "token", "password", "Bearer", "secret"):
+        if secret.lower() in msg.lower():
+            return "Error interno del servidor."
+    sanitized = re.sub(r"/[^\s]*", "[ruta]", msg)
+    return sanitized[:180]
+
+
+def _cached_system(system: str) -> list:
+    """Wraps a system prompt string with cache_control for prompt caching."""
+    return [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}]
+
+
+_EFFORT_MODELS = {"claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-7"}
+
+
 def claude_response(system: str, user_msg: str, max_tokens: int = 512,
-                    model: str = "claude-haiku-4-5-20251001",
-                    history: list | None = None) -> str:
+                    model: str = "claude-haiku-4-5",
+                    history: list | None = None,
+                    effort: str = "low") -> str:
     """Llama a la API de Anthropic con historial conversacional opcional."""
     messages = list(history) if history else []
     messages.append({"role": "user", "content": user_msg})
 
+    kwargs = dict(
+        model=model,
+        max_tokens=max_tokens,
+        system=_cached_system(system),
+        messages=messages,
+        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+    )
+    if model in _EFFORT_MODELS:
+        kwargs["output_config"] = {"effort": effort}
+
     last_error = None
     for attempt in range(3):
         try:
-            response = client.messages.create(
-                model=model,
-                max_tokens=max_tokens,
-                system=system,
-                messages=messages,
-            )
+            response = client.messages.create(**kwargs)
             return response.content[0].text
         except anthropic.APIStatusError as e:
             last_error = e
@@ -648,9 +691,9 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
 ]])
 
 MODELS = {
-    "haiku":  ("claude-haiku-4-5-20251001", "⚡ Haiku",  "Rápido y económico"),
-    "sonnet": ("claude-sonnet-4-6",          "🧠 Sonnet", "Balanceado"),
-    "opus":   ("claude-opus-4-6",            "🚀 Opus",   "Máxima capacidad"),
+    "haiku":  ("claude-haiku-4-5",  "⚡ Haiku",  "Rápido y económico"),
+    "sonnet": ("claude-sonnet-4-6", "🧠 Sonnet", "Balanceado"),
+    "opus":   ("claude-opus-4-7",   "🚀 Opus",   "Máxima capacidad"),
 }
 DEFAULT_MODEL = "haiku"
 
@@ -662,6 +705,12 @@ def get_model(context) -> str:
 def get_model_label(context) -> str:
     key = context.user_data.get("model", DEFAULT_MODEL)
     return MODELS[key][1]
+
+def get_model_for_msg(context, user_msg: str) -> str:
+    """Usa Opus si el mensaje lo menciona explícitamente; si no, usa la preferencia del usuario."""
+    if "opus" in user_msg.lower():
+        return MODELS["opus"][0]
+    return get_model(context)
 
 def model_keyboard(current: str) -> InlineKeyboardMarkup:
     buttons = []
@@ -864,7 +913,8 @@ async def _render_artifact(artifact_type: str, description: str,
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     raw = claude_response(prompt, description,
                           max_tokens=_tokens_map.get(artifact_type, 4000),
-                          model="claude-sonnet-4-6")
+                          model="claude-sonnet-4-6",
+                          effort="high")
     try:
         if artifact_type in ("html", "notas_onenote"):
             html = raw.strip()
@@ -918,7 +968,7 @@ async def _render_artifact(artifact_type: str, description: str,
     except (json.JSONDecodeError, ValueError) as e:
         await reply_fn(f"⚠️ Error al parsear respuesta: {str(e)[:120]}\nInicio: {raw[:200]}")
     except Exception as e:
-        await reply_fn(f"⚠️ Error generando artefacto: {str(e)[:200]}")
+        await reply_fn(f"⚠️ Error generando artefacto: {_safe_err(e)}")
 
 
 def _make_reply_fn(message):
@@ -963,8 +1013,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Intercepta respuesta con destinatario de email
     if context.user_data.get("waiting_email_recipient"):
         context.user_data.pop("waiting_email_recipient")
+        recipient = user_msg.strip()
+        if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", recipient):
+            await update.message.reply_text("⚠️ El correo ingresado no parece válido. Intenta de nuevo.")
+            context.user_data["waiting_email_recipient"] = True
+            return
         draft = context.user_data.get("pending_email", {})
-        draft["para"] = user_msg.strip()
+        draft["para"] = recipient
         context.user_data["pending_email"] = draft
         n_adj = context.user_data.get("email_n_adjuntos", 0)
         await update.message.reply_text(
@@ -1019,12 +1074,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         history    = context.user_data.get("history", [])
         rag_ctx    = rag.build_context(user_msg)
         system     = SYSTEM_PROMPT + rag_ctx
-        reply = claude_response(system, user_msg, model=get_model(context), history=history)
+        reply = claude_response(system, user_msg, model=get_model_for_msg(context, user_msg), history=history)
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
         await send_reply(update, reply, reply_markup=ARTIFACT_KEYBOARD)
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Error al procesar: {str(e)[:200]}")
+        await update.message.reply_text(f"⚠️ Error al procesar: {_safe_err(e)}")
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1048,14 +1103,19 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         prev.cancel()
 
     async def _show_keyboard():
-        await asyncio.sleep(1.5)
-        n = len(context.user_data.get("pending_images", []))
-        label = "imagen recibida" if n == 1 else f"{n} imágenes recibidas"
-        await message.reply_text(
-            f"🖼 *{label.capitalize()}.*\n\n¿Qué hacemos con {'ella' if n == 1 else 'ellas'}?",
-            parse_mode="Markdown",
-            reply_markup=IMAGE_PENDING_KEYBOARD,
-        )
+        try:
+            await asyncio.sleep(1.5)
+            n = len(context.user_data.get("pending_images", []))
+            label = "imagen recibida" if n == 1 else f"{n} imágenes recibidas"
+            await message.reply_text(
+                f"🖼 *{label.capitalize()}.*\n\n¿Qué hacemos con {'ella' if n == 1 else 'ellas'}?",
+                parse_mode="Markdown",
+                reply_markup=IMAGE_PENDING_KEYBOARD,
+            )
+        except asyncio.CancelledError:
+            pass
+        finally:
+            _img_debounce.pop(user_id, None)
 
     _img_debounce[user_id] = asyncio.create_task(_show_keyboard())
 
@@ -1084,8 +1144,9 @@ async def _analyze_image(context) -> str | None:
     response = client.messages.create(
         model=get_model(context),
         max_tokens=1024,
-        system=SYSTEM_PROMPT,
+        system=_cached_system(SYSTEM_PROMPT),
         messages=[{"role": "user", "content": content}],
+        extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
     )
     analysis = response.content[0].text
     push_history(context, caption, analysis)
@@ -1105,6 +1166,9 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⏳ Analizando imagen...")
         analysis = await _analyze_image(context)
         context.user_data.pop("pending_images", None)
+        if not analysis:
+            await query.message.reply_text("⚠️ No se pudo analizar la imagen.")
+            return
         try:
             await query.message.reply_text(
                 fmt(analysis) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
@@ -1147,8 +1211,10 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         content.append({"type": "text", "text": pdf_prompt})
         resp = client.messages.create(
-            model=get_model(context), max_tokens=3000, system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": content}]
+            model=get_model(context), max_tokens=3000,
+            system=_cached_system(SYSTEM_PROMPT),
+            messages=[{"role": "user", "content": content}],
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
         try:
             pdf_data = extract_json(resp.content[0].text)
@@ -1161,7 +1227,7 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=ARTIFACT_KEYBOARD,
             )
         except Exception as e:
-            await query.message.reply_text(f"⚠️ Error generando PDF: {str(e)[:200]}")
+            await query.message.reply_text(f"⚠️ Error generando PDF: {_safe_err(e)}")
         return
 
     # ── PPT con imágenes reales ───────────────────────────────────────
@@ -1191,8 +1257,10 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         content.append({"type": "text", "text": pptx_prompt})
         resp = client.messages.create(
-            model=get_model(context), max_tokens=3000, system=SYSTEM_PROMPT,
-            messages=[{"role": "user", "content": content}]
+            model=get_model(context), max_tokens=3000,
+            system=_cached_system(SYSTEM_PROMPT),
+            messages=[{"role": "user", "content": content}],
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
         try:
             pptx_data = extract_json(resp.content[0].text)
@@ -1205,7 +1273,7 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=ARTIFACT_KEYBOARD,
             )
         except Exception as e:
-            await query.message.reply_text(f"⚠️ Error generando PPT: {str(e)[:200]}")
+            await query.message.reply_text(f"⚠️ Error generando PPT: {_safe_err(e)}")
         return
 
     if art_type not in ARTIFACT_PROMPTS:
@@ -1308,7 +1376,10 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                            caption="📓 Notas en Word — importa este archivo en OneNote")
         return
 
-    # notas_join
+    if query.data != "notas_join":
+        await query.answer("Acción no reconocida.", show_alert=True)
+        return
+
     notas = context.user_data.get("notas", [])
     if not notas:
         await query.edit_message_text("⚠️ No hay notas guardadas.")
@@ -1415,13 +1486,13 @@ ESTRUCTURA HTML obligatoria:
 - Colores corporativos Arauco: --gris:#696158  --verde:#BFB800  --naranja:#EA7600  --fondo:#f5f4f0
 
 DESKTOP (min-width: 768px):
-- Layout flex: sidebar izquierdo 200px (fondo #1e3a5f, color blanco) + contenido principal
-- Sidebar: logo 📓, nombre del cuaderno, lista de secciones clicables con punto de color
+- Layout flex: sidebar izquierdo 200px (fondo #696158, color blanco) + contenido principal
+- Sidebar: logo `<img src="https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png" alt="Arauco" height="24" style="display:block;margin:0 auto 12px">`, nombre del cuaderno, lista de secciones clicables con punto de color
 - Contenido: fondo blanco, padding 40px, sombra sutil, max-width 760px
 
 MOBILE (max-width: 767px):
 - Sin sidebar — oculto con display:none
-- Header fijo en top: fondo #1e3a5f, título del documento, botón ☰ que abre drawer lateral
+- Header fijo en top: fondo #696158, logo `<img src="https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png" alt="Arauco" height="20" style="vertical-align:middle;margin-right:8px">` + título del documento, botón ☰ que abre drawer lateral
 - Drawer: panel lateral deslizable (transform translateX) con las secciones
 - Overlay oscuro al abrir drawer
 - Padding seguro: padding-bottom: env(safe-area-inset-bottom, 16px)
@@ -1862,9 +1933,9 @@ body{{font-family:Arial,Helvetica,sans-serif;background:#f0ede9;color:#333}}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>{titulo}</h1>
-  <p>{subtitulo} &nbsp;·&nbsp; {fecha}</p>
+<div class="header" style="display:flex;align-items:center;gap:14px">
+  <img src="{_ARAUCO_LOGO_URL}" alt="Arauco" height="28" style="flex-shrink:0;object-fit:contain">
+  <div><h1>{titulo}</h1><p>{subtitulo} &nbsp;·&nbsp; {fecha}</p></div>
 </div>
 <div class="controls">
   <span class="badge">Avance promedio: {prom_avance}%</span>
@@ -1922,7 +1993,33 @@ def build_pdf(data: dict) -> io.BytesIO:
     s_kpi_lbl = ParagraphStyle("kpi_lbl", fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER, spaceAfter=0)
     s_kpi_uni = ParagraphStyle("kpi_uni", fontName="Helvetica",        fontSize=7,  textColor=GRIS_L, alignment=TA_CENTER)
 
+    from reportlab.platypus import Image as RLImage
+
     story = []
+
+    # ── BANDA LOGO ───────────────────────────────────────────
+    logo_bytes = _get_logo_bytes()
+    s_arauco_txt = ParagraphStyle("arauco_txt", fontName="Helvetica-Bold", fontSize=14,
+                                  textColor=BLANCO, alignment=TA_LEFT)
+    s_area_txt   = ParagraphStyle("area_txt",   fontName="Helvetica",      fontSize=8,
+                                  textColor=BLANCO, alignment=TA_RIGHT)
+    page_w = A4[0] - 40*mm
+    if logo_bytes:
+        logo_cell = RLImage(io.BytesIO(logo_bytes), width=30*mm, height=10*mm)
+    else:
+        logo_cell = Paragraph("ARAUCO", s_arauco_txt)
+    area_cell = Paragraph(data.get("area", "Subgerencia de Mejora Continua"), s_area_txt)
+    logo_band = Table([[logo_cell, area_cell]], colWidths=[page_w * 0.5, page_w * 0.5])
+    logo_band.setStyle(TableStyle([
+        ("BACKGROUND",    (0, 0), (-1, -1), GRIS),
+        ("TOPPADDING",    (0, 0), (-1, -1), 6),
+        ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+        ("LEFTPADDING",   (0, 0), (0,  -1), 8),
+        ("RIGHTPADDING",  (-1, 0), (-1, -1), 8),
+        ("VALIGN",        (0, 0), (-1, -1), "MIDDLE"),
+    ]))
+    story.append(logo_band)
+    story.append(Spacer(1, 4*mm))
 
     # ── HEADER ──────────────────────────────────────────────
     story.append(Paragraph(data.get("titulo", "Informe Ejecutivo"), s_titulo))
@@ -2335,10 +2432,17 @@ def build_pptx(data: dict) -> io.BytesIO:
         # ── PORTADA ───────────────────────────────────────────────────
         if tipo == "portada":
             _set_bg(slide, GRIS)
-            _add_rect(slide, 0, 0, 13.33, 0.12, AMARILLO)   # línea top
+            _add_rect(slide, 0, 0, 13.33, 0.12, AMARILLO)    # línea top
             _add_rect(slide, 0, 7.38, 13.33, 0.12, AMARILLO) # línea bottom
-            _add_text_box(slide, "ARAUCO", 1.0, 0.5, 11, 0.7,
-                          font_size=13, bold=True, color=AMARILLO)
+            logo_bytes = _get_logo_bytes()
+            if logo_bytes:
+                slide.shapes.add_picture(
+                    io.BytesIO(logo_bytes),
+                    Inches(1.0), Inches(0.3), width=Inches(2.2)
+                )
+            else:
+                _add_text_box(slide, "ARAUCO", 1.0, 0.3, 4, 0.7,
+                              font_size=13, bold=True, color=AMARILLO)
             _add_text_box(slide, slide_data.get("titulo", ""),
                           1.0, 2.0, 11.33, 2.0,
                           font_size=36, bold=True, color=BLANCO, wrap=True)
@@ -2690,8 +2794,6 @@ def extract_pdf(data: bytes) -> str:
             if page_parts:
                 parts.append(f"\n[Página {i}/{total_pages}]")
                 parts.extend(page_parts)
-        if total_pages > len(pdf.pages):
-            parts.append(f"\n... ({total_pages - len(pdf.pages)} páginas adicionales no incluidas)")
     full = "\n".join(parts)
     total_chars = len(full)
     parts.insert(1, f"--- Total caracteres extraídos: {total_chars} ---")
@@ -2858,7 +2960,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         transcript = transcription.strip() if isinstance(transcription, str) else transcription.text.strip()
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Error al transcribir el audio: {str(e)[:200]}")
+        await update.message.reply_text(f"⚠️ Error al transcribir el audio: {_safe_err(e)}")
         return
 
     if not transcript:
@@ -2884,7 +2986,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         rag_ctx  = rag.build_context(transcript)
         system   = SYSTEM_PROMPT + rag_ctx
         reply = claude_response(system, transcript, max_tokens=600,
-                                model=get_model(context), history=history)
+                                model=get_model_for_msg(context, transcript), history=history)
         push_history(context, transcript, reply)
         context.user_data["last_analysis"] = reply
 
@@ -2901,8 +3003,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=ARTIFACT_KEYBOARD
             )
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Error al procesar: {str(e)[:200]}")
+        await update.message.reply_text(f"⚠️ Error al procesar: {_safe_err(e)}")
 
+
+_MAX_DOC_BYTES = 20 * 1024 * 1024  # 20 MB
 
 async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     doc = update.message.document
@@ -2913,6 +3017,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             "📎 Solo proceso *PDF*, *Word (.docx)* y *Excel (.xlsx)*.",
             parse_mode="Markdown"
+        )
+        return
+
+    if doc.file_size and doc.file_size > _MAX_DOC_BYTES:
+        await update.message.reply_text(
+            f"⚠️ El archivo supera el límite de 20 MB ({doc.file_size // (1024*1024)} MB)."
         )
         return
 
@@ -2938,7 +3048,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             content, structured_data = extract_xlsx(file_bytes)
             tipo = "Excel"
     except Exception as e:
-        await update.message.reply_text(f"⚠️ No pude leer el archivo: {str(e)[:200]}")
+        await update.message.reply_text(f"⚠️ No pude leer el archivo: {_safe_err(e)}")
         return
 
     if not content.strip():
@@ -2955,7 +3065,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     history  = context.user_data.get("history", [])
     analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
-    push_history(context, prompt, analysis)
+    push_history(context, f"[Análisis de {tipo}: {doc.file_name}]", analysis)
     context.user_data["last_analysis"] = analysis
     # Guarda datos estructurados (Excel) y contenido raw (PDF/Word/Excel)
     # para que el artifact HTML pueda generar tablas con datos reales
@@ -2993,6 +3103,9 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
     if query.data.startswith("email_edit_"):
         campo = query.data.replace("email_edit_", "")
         labels = {"para": "destinatario", "asunto": "asunto", "cuerpo": "cuerpo del correo"}
+        if campo not in labels:
+            await query.answer("Campo no válido.", show_alert=True)
+            return
         context.user_data["editing_email_field"] = campo
         await query.message.reply_text(f"Escribe el nuevo {labels[campo]}:")
         return
@@ -3016,7 +3129,7 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
             parse_mode="HTML"
         )
     except Exception as e:
-        await query.message.reply_text(f"⚠️ Error al enviar: {str(e)[:200]}")
+        await query.message.reply_text(f"⚠️ Error al enviar: {_safe_err(e)}")
 
 
 async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3047,7 +3160,7 @@ async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             parse_mode="Markdown"
         )
     except Exception as e:
-        await query.message.reply_text(f"⚠️ Error al indexar: {str(e)[:200]}")
+        await query.message.reply_text(f"⚠️ Error al indexar: {_safe_err(e)}")
 
 
 async def documentos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3069,7 +3182,7 @@ async def documentos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
             parse_mode="HTML"
         )
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
+        await update.message.reply_text(f"⚠️ Error: {_safe_err(e)}")
 
 
 async def buscar_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3098,7 +3211,7 @@ async def buscar_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                      f"<i>{_html.escape(c['text'][:300])}...</i>\n\n")
         await update.message.reply_text(resp, parse_mode="HTML")
     except Exception as e:
-        await update.message.reply_text(f"⚠️ Error: {str(e)[:200]}")
+        await update.message.reply_text(f"⚠️ Error: {_safe_err(e)}")
 
 
 async def indexar_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
