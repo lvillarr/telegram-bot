@@ -1119,9 +1119,12 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=IMAGE_PENDING_KEYBOARD,
             )
         except asyncio.CancelledError:
-            pass
+            return
         finally:
-            _img_debounce.pop(user_id, None)
+            # Solo limpia si este task sigue siendo el activo; evita que tareas
+            # canceladas anteriores eliminen el task más reciente del dict.
+            if _img_debounce.get(user_id) is asyncio.current_task():
+                _img_debounce.pop(user_id, None)
 
     _img_debounce[user_id] = asyncio.create_task(_show_keyboard())
 
