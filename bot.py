@@ -1027,16 +1027,23 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     image_b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
     caption = update.message.caption or ""
 
-    context.user_data["pending_image"] = {
-        "b64": image_b64,
-        "media_type": "image/jpeg",
-        "caption": caption,
-    }
-    await update.message.reply_text(
-        "🖼 *Imagen recibida.*\n\n¿Qué hacemos con ella?",
-        parse_mode="Markdown",
-        reply_markup=IMAGE_PENDING_KEYBOARD,
-    )
+    images = context.user_data.get("pending_images", [])
+    images.append({"b64": image_b64, "media_type": "image/jpeg", "caption": caption})
+    context.user_data["pending_images"] = images
+    # pending_image apunta siempre a la primera (la que _analyze_image usará por defecto)
+    context.user_data["pending_image"] = images[0]
+
+    if len(images) == 1:
+        await update.message.reply_text(
+            "🖼 *Imagen recibida.*\n\n¿Qué hacemos con ella?",
+            parse_mode="Markdown",
+            reply_markup=IMAGE_PENDING_KEYBOARD,
+        )
+    else:
+        await update.message.reply_text(
+            f"🖼 Imagen {len(images)} agregada.",
+            parse_mode="Markdown",
+        )
 
 
 async def _analyze_image(context) -> str | None:
@@ -1075,6 +1082,9 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.user_data.get("pending_image"):
         await query.edit_message_text("⚠️ No hay imagen pendiente.")
         return
+
+    # Limpiar acumulador para el próximo batch
+    context.user_data.pop("pending_images", None)
 
     if query.data == "img_analizar":
         await query.edit_message_text("⏳ Analizando imagen...")
