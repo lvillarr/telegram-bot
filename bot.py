@@ -3286,6 +3286,29 @@ async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Guarda una ubicación GPS como nota si el modo notas está activo."""
+    loc  = update.message.location
+    lat  = loc.latitude
+    lon  = loc.longitude
+    maps = f"https://maps.google.com/?q={lat},{lon}"
+    texto = f"📍 Ubicación GPS: {lat:.6f}, {lon:.6f}\n{maps}"
+
+    if context.user_data.get("modo_notas"):
+        notas = context.user_data.get("notas", [])
+        notas.append({"texto": texto, "fecha": datetime.now().strftime("%d/%m %H:%M"), "n": len(notas) + 1})
+        context.user_data["notas"] = notas
+        await update.message.reply_text(
+            _notas_status_text(notas), parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD
+        )
+    else:
+        await update.message.reply_text(
+            f"📍 *Ubicación recibida*\n`{lat:.6f}, {lon:.6f}`\n[Ver en Google Maps]({maps})\n\n"
+            "_Activa el modo notas para guardar ubicaciones automáticamente._",
+            parse_mode="Markdown"
+        )
+
+
 async def post_init(application):
     await application.bot.set_my_commands([
         BotCommand("start",       "🌲 Qué soy y cómo funciono"),
@@ -3327,6 +3350,7 @@ for skill in SKILL_PROMPTS:
 
 app.add_handler(CommandHandler("artifact", artifact_handler))
 app.add_handler(CallbackQueryHandler(artifact_callback, pattern="^art_"))
+app.add_handler(MessageHandler(filters.LOCATION, handle_location))
 app.add_handler(MessageHandler(filters.VOICE, handle_audio))
 app.add_handler(MessageHandler(filters.AUDIO, handle_audio))
 app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
