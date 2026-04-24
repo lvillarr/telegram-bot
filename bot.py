@@ -1119,6 +1119,51 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # img_art_<tipo>
     art_type = query.data.replace("img_art_", "")
+
+    # ── PPT con imágenes reales ───────────────────────────────────────
+    if art_type == "pptx":
+        images = list(context.user_data.get("pending_images", []))
+        context.user_data.pop("pending_images", None)
+        n = len(images)
+        await query.edit_message_text(
+            f"⏳ Analizando {n} imagen(es) y generando presentación...",
+            parse_mode="Markdown"
+        )
+        pptx_prompt = (
+            "Analiza estas imágenes en el contexto operacional forestal de Arauco "
+            "y devuelve ÚNICAMENTE un JSON válido con esta estructura:\n"
+            '{"titulo":"...","subtitulo":"...","area":"Subgerencia de Mejora Continua",'
+            f'"fecha":"{datetime.now().strftime("%d de %B de %Y")}",'
+            '"autor":"Arauco","imagenes":['
+            '{"titulo":"...","descripcion":"...","hallazgos":["...","..."]}'
+            f'],  // exactamente {n} objeto(s)\n'
+            '"conclusiones":["...","..."]}'
+        )
+        content = [
+            {"type": "image", "source": {"type": "base64",
+                                         "media_type": i["media_type"],
+                                         "data": i["b64"]}}
+            for i in images
+        ]
+        content.append({"type": "text", "text": pptx_prompt})
+        resp = client.messages.create(
+            model=get_model(context), max_tokens=3000, system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": content}]
+        )
+        try:
+            pptx_data = extract_json(resp.content[0].text)
+            buf = build_pptx_imagenes(pptx_data, images)
+            titulo = pptx_data.get("titulo", "presentacion-arauco")[:30].lower().replace(" ", "-")
+            await query.message.reply_document(
+                document=buf,
+                filename=f"{titulo}.pptx",
+                caption="🖥️ PowerPoint con imágenes — Arauco Mejora Continua",
+                reply_markup=ARTIFACT_KEYBOARD,
+            )
+        except Exception as e:
+            await query.message.reply_text(f"⚠️ Error generando PPT: {str(e)[:200]}")
+        return
+
     if art_type not in ARTIFACT_PROMPTS:
         await query.answer("Tipo de artefacto no reconocido.", show_alert=True)
         return
@@ -2227,6 +2272,106 @@ def build_pptx(data: dict) -> io.BytesIO:
         nota = slide_data.get("nota", "")
         if nota:
             slide.notes_slide.notes_text_frame.text = nota
+
+    buf = io.BytesIO()
+    prs.save(buf)
+    buf.seek(0)
+    return buf
+
+
+def build_pptx_imagenes(data: dict, images: list) -> io.BytesIO:
+    """PPT con imágenes reales: portada → 1 slide por imagen → cierre."""
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    from pptx.enum.text import PP_ALIGN
+
+    GRIS    = RGBColor(0x69, 0x61, 0x58)
+    AMARILLO = RGBColor(0xBF, 0xB8, 0x00)
+    BLANCO  = RGBColor(0xFF, 0xFF, 0xFF)
+    NEGRO   = RGBColor(0x22, 0x22, 0x22)
+    CREMA   = RGBColor(0xED, 0xEA, 0xE6)
+    GRIS_L  = RGBColor(0x99, 0x99, 0x99)
+
+    prs = Presentation()
+    prs.slide_width  = Inches(13.33)
+    prs.slide_height = Inches(7.5)
+    BLANK = prs.slide_layouts[6]
+
+    def _bg(slide, color):
+        slide.background.fill.solid()
+        slide.background.fill.fore_color.rgb = color
+
+    def _rect(slide, l, t, w, h, color):
+        s = slide.shapes.add_shape(1, Inches(l), Inches(t), Inches(w), Inches(h))
+        s.fill.solid(); s.fill.fore_color.rgb = color; s.line.fill.background()
+
+    def _txt(slide, text, l, t, w, h, size=16, bold=False, color=NEGRO,
+             align=PP_ALIGN.LEFT):
+        tb = slide.shapes.add_textbox(Inches(l), Inches(t), Inches(w), Inches(h))
+        tf = tb.text_frame; tf.word_wrap = True
+        p  = tf.paragraphs[0]; p.alignment = align
+        r  = p.add_run(); r.text = text
+        r.font.size = Pt(size); r.font.bold = bold; r.font.color.rgb = color
+
+    # ── PORTADA ──────────────────────────────────────────────────────────
+    sl = prs.slides.add_slide(BLANK)
+    _bg(sl, GRIS)
+    _rect(sl, 0, 0, 13.33, 0.12, AMARILLO)
+    _rect(sl, 0, 7.38, 13.33, 0.12, AMARILLO)
+    _txt(sl, "ARAUCO", 1.0, 0.4, 11, 0.6, size=13, bold=True, color=AMARILLO)
+    _txt(sl, data.get("titulo", "Registro Visual"),
+         1.0, 1.8, 11.33, 2.0, size=36, bold=True, color=BLANCO)
+    _txt(sl, data.get("subtitulo", ""),
+         1.0, 4.0, 11.33, 1.0, size=20, color=CREMA)
+    _txt(sl, f"{data.get('area','')}  |  {data.get('fecha','')}  |  {data.get('autor','')}",
+         1.0, 6.6, 11.33, 0.6, size=10, color=GRIS_L)
+
+    # ── SLIDE POR IMAGEN ─────────────────────────────────────────────────
+    img_metas = data.get("imagenes", [])
+    for i, img in enumerate(images):
+        meta  = img_metas[i] if i < len(img_metas) else {}
+        sl    = prs.slides.add_slide(BLANK)
+        _bg(sl, BLANCO)
+        _rect(sl, 0, 0, 13.33, 1.1, GRIS)
+        _txt(sl, meta.get("titulo", f"Imagen {i+1}"),
+             0.3, 0.18, 12.73, 0.75, size=22, bold=True, color=BLANCO)
+        _rect(sl, 0.4, 1.15, 0.06, 6.0, AMARILLO)  # barra lateral
+
+        # Imagen izquierda
+        try:
+            img_bytes  = base64.b64decode(img["b64"])
+            img_stream = io.BytesIO(img_bytes)
+            sl.shapes.add_picture(img_stream, Inches(0.55), Inches(1.25),
+                                  Inches(6.8), Inches(5.8))
+        except Exception:
+            _txt(sl, "[imagen no disponible]", 0.6, 3.5, 6.5, 0.5, size=12, color=GRIS_L)
+
+        # Texto derecha
+        desc = meta.get("descripcion", "")
+        if desc:
+            _txt(sl, desc, 7.6, 1.3, 5.4, 1.8, size=13, color=NEGRO)
+
+        hallazgos = meta.get("hallazgos", [])
+        y = 3.3
+        for h in hallazgos[:5]:
+            _txt(sl, f"• {h}", 7.6, y, 5.4, 0.6, size=12, color=NEGRO)
+            y += 0.65
+
+        nota = meta.get("nota", "")
+        if nota:
+            sl.notes_slide.notes_text_frame.text = nota
+
+    # ── CIERRE ───────────────────────────────────────────────────────────
+    sl = prs.slides.add_slide(BLANK)
+    _bg(sl, GRIS)
+    _rect(sl, 0, 0, 13.33, 0.12, AMARILLO)
+    _rect(sl, 0, 7.38, 13.33, 0.12, AMARILLO)
+    _txt(sl, "Conclusiones", 1.0, 1.3, 11.33, 1.0, size=30, bold=True, color=BLANCO)
+    y = 2.8
+    for c in data.get("conclusiones", [])[:6]:
+        _txt(sl, f"• {c}", 1.2, y, 10.8, 0.6, size=16, color=CREMA)
+        y += 0.7
 
     buf = io.BytesIO()
     prs.save(buf)
