@@ -1120,6 +1120,50 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # img_art_<tipo>
     art_type = query.data.replace("img_art_", "")
 
+    # ── PDF con imágenes reales ───────────────────────────────────────
+    if art_type == "pdf":
+        images = list(context.user_data.get("pending_images", []))
+        context.user_data.pop("pending_images", None)
+        n = len(images)
+        await query.edit_message_text(
+            f"⏳ Analizando {n} imagen(es) y generando PDF...",
+            parse_mode="Markdown"
+        )
+        pdf_prompt = (
+            "Analiza estas imágenes en el contexto operacional forestal de Arauco "
+            "y devuelve ÚNICAMENTE un JSON válido con esta estructura:\n"
+            '{"titulo":"...","subtitulo":"...","area":"Subgerencia de Mejora Continua",'
+            f'"fecha":"{datetime.now().strftime("%d de %B de %Y")}",'
+            '"imagenes":['
+            '{"titulo":"...","descripcion":"...","hallazgos":["...","..."]}'
+            f'],  // exactamente {n} objeto(s)\n'
+            '"conclusiones":["...","..."]}'
+        )
+        content = [
+            {"type": "image", "source": {"type": "base64",
+                                         "media_type": i["media_type"],
+                                         "data": i["b64"]}}
+            for i in images
+        ]
+        content.append({"type": "text", "text": pdf_prompt})
+        resp = client.messages.create(
+            model=get_model(context), max_tokens=3000, system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": content}]
+        )
+        try:
+            pdf_data = extract_json(resp.content[0].text)
+            buf = build_pdf_imagenes(pdf_data, images)
+            titulo = pdf_data.get("titulo", "informe-visual")[:30].lower().replace(" ", "-")
+            await query.message.reply_document(
+                document=buf,
+                filename=f"{titulo}.pdf",
+                caption="📄 Informe PDF con imágenes — Arauco Mejora Continua",
+                reply_markup=ARTIFACT_KEYBOARD,
+            )
+        except Exception as e:
+            await query.message.reply_text(f"⚠️ Error generando PDF: {str(e)[:200]}")
+        return
+
     # ── PPT con imágenes reales ───────────────────────────────────────
     if art_type == "pptx":
         images = list(context.user_data.get("pending_images", []))
@@ -2004,6 +2048,123 @@ def build_pdf(data: dict) -> io.BytesIO:
         f"Arauco — Subgerencia de Mejora Continua &nbsp;|&nbsp; {data.get('fecha','')} &nbsp;|&nbsp; {data.get('fuente','')}",
         s_footer
     ))
+
+    doc.build(story)
+    buf.seek(0)
+    return buf
+
+
+def build_pdf_imagenes(data: dict, images: list) -> io.BytesIO:
+    """PDF con imágenes reales: portada → 1 página por imagen → conclusiones."""
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib import colors
+    from reportlab.lib.units import mm
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.platypus import (
+        SimpleDocTemplate, Paragraph, Spacer, HRFlowable,
+        Image as RLImage, PageBreak, KeepTogether
+    )
+    from reportlab.lib.enums import TA_JUSTIFY, TA_CENTER
+    from reportlab.lib.utils import ImageReader
+
+    GRIS   = colors.HexColor("#696158")
+    VERDE  = colors.HexColor("#BFB800")
+    NEGRO  = colors.HexColor("#222222")
+    GRIS_L = colors.HexColor("#999999")
+    CREMA  = colors.HexColor("#EDEAE6")
+
+    PAGE_W, PAGE_H = A4
+    MARGIN = 20 * mm
+    USABLE_W = PAGE_W - 2 * MARGIN
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4,
+                            leftMargin=MARGIN, rightMargin=MARGIN,
+                            topMargin=18*mm, bottomMargin=18*mm,
+                            title=data.get("titulo", "Informe Visual Arauco"))
+
+    s_titulo  = ParagraphStyle("t",  fontName="Helvetica-Bold",   fontSize=20,
+                                textColor=GRIS, leading=26, spaceAfter=4*mm)
+    s_sub     = ParagraphStyle("s",  fontName="Helvetica",        fontSize=11,
+                                textColor=GRIS_L, spaceAfter=6*mm)
+    s_meta    = ParagraphStyle("m",  fontName="Helvetica",        fontSize=8,
+                                textColor=GRIS_L, spaceAfter=4*mm)
+    s_seccion = ParagraphStyle("sc", fontName="Helvetica-Bold",   fontSize=12,
+                                textColor=GRIS, spaceBefore=4*mm, spaceAfter=2*mm)
+    s_body    = ParagraphStyle("b",  fontName="Helvetica",        fontSize=9,
+                                textColor=NEGRO, leading=14,
+                                alignment=TA_JUSTIFY, spaceAfter=3*mm)
+    s_bullet  = ParagraphStyle("bu", fontName="Helvetica",        fontSize=9,
+                                textColor=NEGRO, leading=13,
+                                leftIndent=8*mm, spaceAfter=2*mm)
+    s_concl   = ParagraphStyle("co", fontName="Helvetica-Oblique",fontSize=9,
+                                textColor=NEGRO, leading=14, spaceAfter=3*mm)
+    s_caption = ParagraphStyle("cp", fontName="Helvetica",        fontSize=7,
+                                textColor=GRIS_L, alignment=TA_CENTER, spaceAfter=3*mm)
+
+    story = []
+
+    # ── PORTADA ──────────────────────────────────────────────────────────
+    story.append(Paragraph(data.get("titulo", "Registro Visual"), s_titulo))
+    if data.get("subtitulo"):
+        story.append(Paragraph(data["subtitulo"], s_sub))
+    story.append(Paragraph(
+        f"<b>Área:</b> {data.get('area', 'Mejora Continua')} &nbsp;|&nbsp; "
+        f"<b>Fecha:</b> {data.get('fecha', '')} &nbsp;|&nbsp; "
+        f"<b>Imágenes:</b> {len(images)}",
+        s_meta
+    ))
+    story.append(HRFlowable(width="100%", thickness=2, color=GRIS, spaceAfter=6*mm))
+
+    # Índice rápido
+    for i, img_meta in enumerate(data.get("imagenes", [])[:len(images)]):
+        story.append(Paragraph(f"{i+1}. {img_meta.get('titulo', f'Imagen {i+1}')}", s_body))
+    story.append(PageBreak())
+
+    # ── UNA PÁGINA POR IMAGEN ────────────────────────────────────────────
+    img_metas = data.get("imagenes", [])
+    for i, img in enumerate(images):
+        meta = img_metas[i] if i < len(img_metas) else {}
+
+        # Calcular dimensiones manteniendo proporción
+        try:
+            raw = base64.b64decode(img["b64"])
+            ir  = ImageReader(io.BytesIO(raw))
+            px_w, px_h = ir.getSize()
+            aspect   = px_h / px_w
+            max_img_h = 130 * mm
+            disp_w   = USABLE_W
+            disp_h   = min(disp_w * aspect, max_img_h)
+            if disp_h == max_img_h:
+                disp_w = disp_h / aspect
+            img_flow = RLImage(io.BytesIO(raw), width=disp_w, height=disp_h)
+        except Exception:
+            img_flow = None
+
+        bloque = []
+        bloque.append(Paragraph(meta.get("titulo", f"Imagen {i+1}"), s_seccion))
+        bloque.append(HRFlowable(width="100%", thickness=1, color=VERDE, spaceAfter=3*mm))
+        if img_flow:
+            bloque.append(img_flow)
+            bloque.append(Paragraph(f"Imagen {i+1} de {len(images)}", s_caption))
+        if meta.get("descripcion"):
+            bloque.append(Paragraph(meta["descripcion"], s_body))
+        for h in meta.get("hallazgos", []):
+            bloque.append(Paragraph(f"• {h}", s_bullet))
+
+        story.append(KeepTogether(bloque[:3]))   # título + línea + imagen juntos
+        story.extend(bloque[3:])
+        if i < len(images) - 1:
+            story.append(PageBreak())
+
+    # ── CONCLUSIONES ─────────────────────────────────────────────────────
+    conclusiones = data.get("conclusiones", [])
+    if conclusiones:
+        story.append(PageBreak())
+        story.append(Paragraph("Conclusiones y Recomendaciones", s_seccion))
+        story.append(HRFlowable(width="100%", thickness=1, color=GRIS, spaceAfter=4*mm))
+        for c in conclusiones:
+            story.append(Paragraph(f"• {c}", s_concl))
 
     doc.build(story)
     buf.seek(0)
