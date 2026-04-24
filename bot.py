@@ -1096,12 +1096,10 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("⚠️ No hay imagen pendiente.")
         return
 
-    # Limpiar acumulador para el próximo batch
-    context.user_data.pop("pending_images", None)
-
     if query.data == "img_analizar":
         await query.edit_message_text("⏳ Analizando imagen...")
         analysis = await _analyze_image(context)
+        context.user_data.pop("pending_images", None)
         try:
             await query.message.reply_text(
                 fmt(analysis) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
@@ -1123,6 +1121,7 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(f"⏳ Analizando imagen y generando *{art_type}*...",
                                   parse_mode="Markdown")
     analysis = await _analyze_image(context)
+    context.user_data.pop("pending_images", None)
     if not analysis:
         await query.message.reply_text("⚠️ No se pudo analizar la imagen.")
         return
