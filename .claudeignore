@@ -1,0 +1,32 @@
+# Task completion documents (load only when explicitly requested)
+.claude/completions/**
+
+# Session files (load only when explicitly requested)
+.claude/sessions/**
+
+# Archived documentation
+docs/archive/**
+
+# Python
+__pycache__/**
+*.pyc
+*.pyo
+*.egg-info/**
+.venv/**
+venv/**
+
+# Data
+.claude/chroma/**
+/data/**
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+*.log
+logs/**
+
+# OS
+.DS_Store
