@@ -661,7 +661,7 @@ NOTAS_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📓 Juntar en OneNote", callback_data="notas_join"),
     InlineKeyboardButton("🗑 Borrar notas",      callback_data="notas_clear"),
 ], [
-    InlineKeyboardButton("📍 + ubicación a esta nota", callback_data="notas_add_location"),
+    InlineKeyboardButton("📍 Ubicación", callback_data="notas_add_location"),
 ], [
     InlineKeyboardButton("✅ Salir del modo notas", callback_data="notas_salir"),
 ]])
