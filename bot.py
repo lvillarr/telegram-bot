@@ -26,6 +26,7 @@ from telegram.ext import ContextTypes
 # ── Servidor HTTP (hilo de fondo) para servir HTML como URL pública ──────────
 _HTML_STORE: OrderedDict = OrderedDict()   # uuid → html_string (máx 100 entradas)
 _MAX_STORE  = 100
+_html_lock  = threading.Lock()             # protege _HTML_STORE en acceso concurrente
 _img_debounce: dict = {}                   # user_id → asyncio.Task
 _HTTP_PORT  = int(os.environ.get("PORT", 8080))
 PUBLIC_BASE = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
@@ -789,11 +790,14 @@ async def modelo_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     context.user_data["model"] = key
     _, label, desc = MODELS[key]
-    await query.edit_message_text(
-        f"✅ Modelo actualizado: *{label}*\n_{desc}_\n\nTodos los mensajes usarán este modelo.",
-        reply_markup=model_keyboard(key),
-        parse_mode="Markdown"
-    )
+    try:
+        await query.edit_message_text(
+            f"✅ Modelo actualizado: *{label}*\n_{desc}_\n\nTodos los mensajes usarán este modelo.",
+            reply_markup=model_keyboard(key),
+            parse_mode="Markdown"
+        )
+    except Exception:
+        pass
 
 
 CODE_BLOCK_RE = re.compile(r'```(\w*)\n(.*?)```', re.DOTALL)
@@ -1126,7 +1130,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         history    = context.user_data.get("history", [])
-        rag_ctx    = rag.build_context(user_msg) if rag.col.count() > 0 else ""
+        try:
+            rag_ctx = rag.build_context(user_msg) if rag.col and rag.col.count() > 0 else ""
+        except Exception:
+            rag_ctx = ""
         system     = SYSTEM_PROMPT + rag_ctx
         reply = claude_response(system, user_msg, model=get_model_for_msg(context, user_msg), history=history)
         push_history(context, user_msg, reply)
@@ -1137,9 +1144,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not update.message or not update.message.photo:
+        return
     photo = update.message.photo[-1]
     file = await context.bot.get_file(photo.file_id)
-    file_bytes = await asyncio.wait_for(file.download_as_bytearray(), timeout=30.0)
+    try:
+        file_bytes = await asyncio.wait_for(file.download_as_bytearray(), timeout=30.0)
+    except asyncio.TimeoutError:
+        await update.message.reply_text("⚠️ La descarga tardó demasiado. Intenta con una imagen más pequeña.")
+        return
     image_b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
     caption = update.message.caption or ""
 
@@ -1152,7 +1165,7 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
     message  = update.message
 
     # Cancela el timer anterior y reinicia (debounce 1.5 s)
-    prev = _img_debounce.get(user_id)
+    prev = _img_debounce.pop(user_id, None)
     if prev and not prev.done():
         prev.cancel()
 
@@ -1205,6 +1218,8 @@ async def _analyze_image(context) -> str | None:
         messages=[{"role": "user", "content": content}],
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
     )
+    if not response.content:
+        return None
     analysis = response.content[0].text
     push_history(context, caption, analysis)
     context.user_data["last_analysis"] = analysis
@@ -1274,6 +1289,8 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
         try:
+            if not resp.content:
+                raise ValueError("Respuesta vacía del modelo")
             pdf_data = extract_json(resp.content[0].text)
             buf = build_pdf_imagenes(pdf_data, images)
             titulo = pdf_data.get("titulo", "informe-visual")[:30].lower().replace(" ", "-")
@@ -1320,6 +1337,8 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
         try:
+            if not resp.content:
+                raise ValueError("Respuesta vacía del modelo")
             pptx_data = extract_json(resp.content[0].text)
             buf = build_pptx_imagenes(pptx_data, images)
             titulo = pptx_data.get("titulo", "presentacion-arauco")[:30].lower().replace(" ", "-")
@@ -1352,6 +1371,8 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def _notas_status_text(notas: list) -> str:
+    if not notas:
+        return "📝 *Modo notas* — escribe o envía un audio."
     n = len(notas)
     preview = notas[-1]["texto"][:60] + ("…" if len(notas[-1]["texto"]) > 60 else "")
     return (f"📝 *Nota {n} guardada*\n"
@@ -1371,7 +1392,10 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                "Escribe lo que quieras anotar o envía un audio — "
                "todo se guardará como nota.\n\n"
                f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}")
-        await query.edit_message_reply_markup(reply_markup=None)
+        try:
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
         await query.message.reply_text(msg, parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD)
         return
 
@@ -1817,9 +1841,10 @@ def extract_json(raw: str) -> dict:
 def store_html(html: str) -> str:
     """Guarda HTML en memoria y retorna la URL pública."""
     gid = uuid.uuid4().hex
-    _HTML_STORE[gid] = html
-    if len(_HTML_STORE) > _MAX_STORE:
-        _HTML_STORE.popitem(last=False)   # elimina el más antiguo
+    with _html_lock:
+        _HTML_STORE[gid] = html
+        if len(_HTML_STORE) > _MAX_STORE:
+            _HTML_STORE.popitem(last=False)   # elimina el más antiguo
     return f"{PUBLIC_BASE}/g/{gid}"
 
 
@@ -3055,7 +3080,10 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         history  = context.user_data.get("history", [])
-        rag_ctx  = rag.build_context(transcript) if rag.col.count() > 0 else ""
+        try:
+            rag_ctx = rag.build_context(transcript) if rag.col and rag.col.count() > 0 else ""
+        except Exception:
+            rag_ctx = ""
         system   = SYSTEM_PROMPT + rag_ctx
         reply = claude_response(system, transcript, max_tokens=600,
                                 model=get_model_for_msg(context, transcript), history=history)
@@ -3334,12 +3362,11 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Borra el historial conversacional del usuario."""
-    context.user_data.pop("history", None)
-    context.user_data.pop("last_analysis", None)
+    """Limpia todo el estado del usuario (historial, notas, email, imágenes)."""
+    context.user_data.clear()
     await update.message.reply_text(
-        "🔄 *Conversación reiniciada.* El contexto anterior fue borrado.\n"
-        "Puedes empezar una nueva consulta desde cero.",
+        "🔄 *Estado completamente reiniciado.* Historial, notas, borradores y modos activos fueron borrados.\n"
+        "Puedes empezar desde cero.",
         parse_mode="Markdown"
     )
 
