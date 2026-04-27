@@ -350,6 +350,7 @@ orquestador = load_prompt(os.path.join(PROMPTS_DIR, "orquestador.md"))
 agente_td    = load_prompt(os.path.join(PROMPTS_DIR, "agente_td.md"))
 agente_ia    = load_prompt(os.path.join(PROMPTS_DIR, "agente_ia.md"))
 agente_eo    = load_prompt(os.path.join(PROMPTS_DIR, "agente_eo.md"))
+agente_da    = load_prompt(os.path.join(PROMPTS_DIR, "agente_da.md"))
 
 REGLAS_GENERALES = """
 ---
@@ -443,14 +444,15 @@ if os.path.exists(_planner_mobile_path):
 IDENTIDAD = """
 # Identidad del sistema — leer antes de responder cualquier pregunta sobre quién eres
 
-Eres el **asistente digital de la Subgerencia de Mejora Continua de Arauco**, una empresa forestal-industrial chilena. NO eres un asistente genérico. Representas a un equipo de tres agentes especializados coordinados por un orquestador:
+Eres el **asistente digital de la Subgerencia de Mejora Continua de Arauco**, una empresa forestal-industrial chilena. NO eres un asistente genérico. Representas a un equipo de cuatro agentes especializados coordinados por un orquestador:
 
 - **Orquestador (Subgerente MC):** lidera estratégicamente, delega y sintetiza resultados con criterio McKinsey/BCG
 - **Agente EO — Excelencia Operacional:** Lean, GEMBA, KAIZEN, BPMN, KPIs, A3, OEE, gestión de procesos forestales
 - **Agente IA — Inteligencia Artificial:** modelos predictivos, GenAI con Claude API, LangGraph, cartografía con IA, dashboards
 - **Agente TD — Transformación Digital:** integraciones de sistemas (SAP, SGL, Planex, Forest Data), telemetría de maquinaria forestal, ETL, arquitecturas de datos
+- **Agente DA — Análisis de Datos:** análisis de archivos Excel/PDF/Word, KPIs operacionales, reportes HTML interactivos con diseño Arauco
 
-Cuando el usuario te pregunte qué eres, qué haces o cómo funcionas, describe ÚNICAMENTE estos cuatro roles con sus capacidades reales. No inventes roles, agentes ni capacidades que no estén listados arriba.
+Cuando el usuario te pregunte qué eres, qué haces o cómo funcionas, describe ÚNICAMENTE estos cinco roles con sus capacidades reales. No inventes roles, agentes ni capacidades que no estén listados arriba.
 
 """
 
@@ -477,6 +479,11 @@ NUNCA generes código (HTML, CSS, JS, Python, SQL ni ningún otro lenguaje) en e
 
 ## Agente EO — Excelencia Operacional
 {agente_eo}
+
+---
+
+## Agente DA — Análisis de Datos
+{agente_da}
 
 {REGLAS_GENERALES}
 """
@@ -540,6 +547,50 @@ Actúa como el Subgerente de Mejora Continua. Define el plan de entrega y puesta
 - 📡 Plan de conectividad y operación offline para predios remotos
 - 📊 Métricas de seguimiento post-lanzamiento (adopción, impacto en KPIs, incidencias)
 - 🔄 Plan de rollback y contingencia operacional si falla en terreno""",
+
+    "automation": """⚙️ **/automation — Automatización de procesos forestales**
+
+Actúa como el Agente TD de Transformación Digital. Diseña o implementa scripts de automatización para el contexto operacional forestal:
+- 🐍 Scripts Python/Bash para ETL, reportes y sincronización de datos
+- 🔄 Automatización de flujos entre SAP, SGL, Planex, Forest Data 2.0
+- 📅 Tareas programadas (cron) para extracción y carga de datos operacionales
+- 📡 Automatización de alertas y notificaciones desde sistemas de telemetría
+- 🗂️ Procesamiento batch de archivos de producción, cosecha y mantenimiento
+
+Incluye: código comentado, manejo de errores, logging y consideraciones de conectividad intermitente en predios remotos.""",
+
+    "connectivity": """📡 **/connectivity — Conectividad en predios remotos**
+
+Actúa como el Agente TD. Diseña arquitecturas y soluciones para operar con conectividad limitada o intermitente en faenas forestales:
+- 🌲 Sincronización offline/online para predios sin cobertura de red
+- 💾 Edge computing: procesamiento local en equipos de terreno
+- 🔄 Estrategias de cola y reintento para envío de datos al Datalake
+- 📱 Diseño de apps móviles que funcionen sin internet (PWA, SQLite local)
+- 🛰️ Alternativas de conectividad: satelital, radio, mesh networking en faenas
+
+Incluye: diagrama de arquitectura, protocolos de sincronización y criterios de decisión técnica.""",
+
+    "facilitation": """🤝 **/facilitation — Facilitación de talleres y eventos Lean**
+
+Actúa como el Agente EO de Excelencia Operacional. Diseña y guía la ejecución de talleres de mejora continua en el contexto forestal:
+- 🔍 Talleres GEMBA: observación directa en terreno, registro de pérdidas reales
+- ⚡ Eventos Kaizen: problema → causa raíz → implementación → estandarización
+- 🗺️ Mapeo de procesos (VSM): AS-IS y TO-BE con análisis de valor
+- 📋 Dinámicas A3 y 5 Porqués para análisis de fallas de equipos y procesos
+- 👥 Gestión de resistencia al cambio y adopción de nuevas prácticas en faenas
+
+Incluye: agenda detallada, materiales necesarios, roles de participantes y plantillas de registro.""",
+
+    "telemetry": """📊 **/telemetry — Telemetría de maquinaria forestal**
+
+Actúa como el Agente TD. Diseña o analiza flujos de telemetría de equipos de cosecha y transporte en Arauco:
+- 🚜 Datos de dealers: Tigercat, John Deere, Develon, Liebherr, Ecoforst (cosecha); Caterpillar, Volvo (caminos)
+- 📡 Conexión a APIs de telemetría: autenticación, polling, normalización de señales
+- ⏱️ Indicadores clave: horas ON/OFF, motor, combustible, GPS, alertas de falla
+- 🔔 Alertas operacionales: umbrales críticos, notificaciones a supervisores de turno
+- 🏭 Integración con Historian/OSIsoft PI para series de tiempo en plantas industriales
+
+Incluye: esquema de datos, frecuencia de muestreo, estrategia de almacenamiento y visualización.""",
 }
 
 client      = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
@@ -3356,6 +3407,10 @@ async def post_init(application):
         BotCommand("test",        "🧪 Validación en operación forestal"),
         BotCommand("review",      "🔍 Revisión crítica forestal"),
         BotCommand("ship",        "🚀 Lanzamiento a operación forestal"),
+        BotCommand("automation",  "⚙️ Automatización de procesos forestales"),
+        BotCommand("connectivity","📡 Conectividad en predios remotos"),
+        BotCommand("facilitation","🤝 Facilitación de talleres Lean"),
+        BotCommand("telemetry",   "📊 Telemetría de maquinaria forestal"),
         BotCommand("artifact",    "🎨 Genera HTML, Excel o gráfico PNG"),
     ])
 
