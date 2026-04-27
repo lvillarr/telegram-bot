@@ -661,6 +661,8 @@ NOTAS_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📓 Juntar en OneNote", callback_data="notas_join"),
     InlineKeyboardButton("🗑 Borrar notas",      callback_data="notas_clear"),
 ], [
+    InlineKeyboardButton("📍 + ubicación a esta nota", callback_data="notas_add_location"),
+], [
     InlineKeyboardButton("✅ Salir del modo notas", callback_data="notas_salir"),
 ]])
 
@@ -1336,6 +1338,18 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(
             f"✅ Modo notas desactivado.{' Tienes ' + str(n) + ' nota(s) guardada(s).' if n else ''}",
             reply_markup=ARTIFACT_KEYBOARD if n else None
+        )
+        return
+
+    if query.data == "notas_add_location":
+        notas = context.user_data.get("notas", [])
+        if not notas:
+            await query.answer("⚠️ Escribe una nota primero.", show_alert=True)
+            return
+        context.user_data["agregar_ubicacion_a_nota"] = len(notas)  # índice (1-based) de la nota target
+        await query.message.reply_text(
+            "📍 Comparte tu ubicación para añadirla a la última nota.",
+            parse_mode="Markdown"
         )
         return
 
@@ -3287,26 +3301,46 @@ async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Guarda una ubicación GPS como nota si el modo notas está activo."""
+    """Guarda una ubicación GPS como nota o la adjunta a la última nota."""
     loc  = update.message.location
     lat  = loc.latitude
     lon  = loc.longitude
     maps = f"https://maps.google.com/?q={lat},{lon}"
-    texto = f"📍 Ubicación GPS: {lat:.6f}, {lon:.6f}\n{maps}"
+    gps_line = f"📍 {lat:.6f}, {lon:.6f} — {maps}"
 
+    # Caso 1: adjuntar a la última nota (botón "📍 + ubicación a esta nota")
+    target_idx = context.user_data.pop("agregar_ubicacion_a_nota", None)
+    if target_idx is not None:
+        notas = context.user_data.get("notas", [])
+        if notas and target_idx <= len(notas):
+            notas[target_idx - 1]["texto"] += f"\n{gps_line}"
+            context.user_data["notas"] = notas
+            nota = notas[target_idx - 1]
+            preview = nota["texto"][:80] + ("…" if len(nota["texto"]) > 80 else "")
+            await update.message.reply_text(
+                f"📍 *Ubicación añadida a Nota {target_idx}*\n_{preview}_",
+                parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD
+            )
+        else:
+            await update.message.reply_text("⚠️ No se encontró la nota.", reply_markup=NOTAS_KEYBOARD)
+        return
+
+    # Caso 2: modo notas activo → nueva nota con solo la ubicación
     if context.user_data.get("modo_notas"):
         notas = context.user_data.get("notas", [])
-        notas.append({"texto": texto, "fecha": datetime.now().strftime("%d/%m %H:%M"), "n": len(notas) + 1})
+        notas.append({"texto": gps_line, "fecha": datetime.now().strftime("%d/%m %H:%M"), "n": len(notas) + 1})
         context.user_data["notas"] = notas
         await update.message.reply_text(
             _notas_status_text(notas), parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD
         )
-    else:
-        await update.message.reply_text(
-            f"📍 *Ubicación recibida*\n`{lat:.6f}, {lon:.6f}`\n[Ver en Google Maps]({maps})\n\n"
-            "_Activa el modo notas para guardar ubicaciones automáticamente._",
-            parse_mode="Markdown"
-        )
+        return
+
+    # Caso 3: fuera de modo notas
+    await update.message.reply_text(
+        f"📍 *Ubicación recibida*\n`{lat:.6f}, {lon:.6f}`\n[Ver en Google Maps]({maps})\n\n"
+        "_Activa el modo notas para guardar ubicaciones automáticamente._",
+        parse_mode="Markdown"
+    )
 
 
 async def post_init(application):
