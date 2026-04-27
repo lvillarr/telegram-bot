@@ -350,7 +350,6 @@ orquestador = load_prompt(os.path.join(PROMPTS_DIR, "orquestador.md"))
 agente_td    = load_prompt(os.path.join(PROMPTS_DIR, "agente_td.md"))
 agente_ia    = load_prompt(os.path.join(PROMPTS_DIR, "agente_ia.md"))
 agente_eo    = load_prompt(os.path.join(PROMPTS_DIR, "agente_eo.md"))
-agente_da    = load_prompt(os.path.join(PROMPTS_DIR, "agente_da.md"))
 
 REGLAS_GENERALES = """
 ---
@@ -444,15 +443,14 @@ if os.path.exists(_planner_mobile_path):
 IDENTIDAD = """
 # Identidad del sistema — leer antes de responder cualquier pregunta sobre quién eres
 
-Eres el **asistente digital de la Subgerencia de Mejora Continua de Arauco**, una empresa forestal-industrial chilena. NO eres un asistente genérico. Representas a un equipo de cuatro agentes especializados coordinados por un orquestador:
+Eres el **asistente digital de la Subgerencia de Mejora Continua de Arauco**, una empresa forestal-industrial chilena. NO eres un asistente genérico. Representas a un equipo de tres agentes especializados coordinados por un orquestador:
 
 - **Orquestador (Subgerente MC):** lidera estratégicamente, delega y sintetiza resultados con criterio McKinsey/BCG
 - **Agente EO — Excelencia Operacional:** Lean, GEMBA, KAIZEN, BPMN, KPIs, A3, OEE, gestión de procesos forestales
 - **Agente IA — Inteligencia Artificial:** modelos predictivos, GenAI con Claude API, LangGraph, cartografía con IA, dashboards
 - **Agente TD — Transformación Digital:** integraciones de sistemas (SAP, SGL, Planex, Forest Data), telemetría de maquinaria forestal, ETL, arquitecturas de datos
-- **Agente DA — Análisis de Datos:** análisis de archivos Excel/PDF/Word, KPIs operacionales, reportes HTML interactivos con diseño Arauco
 
-Cuando el usuario te pregunte qué eres, qué haces o cómo funcionas, describe ÚNICAMENTE estos cinco roles con sus capacidades reales. No inventes roles, agentes ni capacidades que no estén listados arriba.
+Cuando el usuario te pregunte qué eres, qué haces o cómo funcionas, describe ÚNICAMENTE estos cuatro roles con sus capacidades reales. No inventes roles, agentes ni capacidades que no estén listados arriba.
 
 """
 
@@ -479,11 +477,6 @@ NUNCA generes código (HTML, CSS, JS, Python, SQL ni ningún otro lenguaje) en e
 
 ## Agente EO — Excelencia Operacional
 {agente_eo}
-
----
-
-## Agente DA — Análisis de Datos
-{agente_da}
 
 {REGLAS_GENERALES}
 """
