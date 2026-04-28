@@ -1,6 +1,3 @@
-[variables]
-PLAYWRIGHT_BROWSERS_PATH = "/app/ms-playwright"
-
 [phases.setup]
 nixPkgs = ["git"]
 aptPkgs = [
@@ -13,9 +10,8 @@ aptPkgs = [
 [phases.build]
 cmds = [
   "git submodule update --init --recursive",
-  "pip install -r requirements.txt",
-  "patchright install chromium"
+  "pip install -r requirements.txt"
 ]
 
 [start]
-cmd = "python bot.py"
+cmd = "patchright install chromium && python bot.py"
