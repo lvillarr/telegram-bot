@@ -11,7 +11,7 @@ aptPkgs = [
 cmds = [
   "git submodule update --init --recursive",
   "pip install -r requirements.txt",
-  "patchright install chromium"
+  "PLAYWRIGHT_BROWSERS_PATH=/app/ms-playwright patchright install chromium"
 ]
 
 [start]
