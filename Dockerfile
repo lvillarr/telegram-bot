@@ -19,6 +19,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN patchright install chromium
 
 COPY . .
-RUN git submodule update --init --recursive
 
 CMD ["python", "bot.py"]
