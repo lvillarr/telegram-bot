@@ -743,8 +743,7 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
     InlineKeyboardButton("📧 Email", callback_data="art_email"),
 ], [
-    InlineKeyboardButton("📥 RAG",         callback_data="rag_index"),
-    InlineKeyboardButton("📖 NotebookRAG", callback_data="nlm_ask"),
+    InlineKeyboardButton("📥 RAG", callback_data="rag_index"),
 ]])
 
 MODELS = {
@@ -3229,11 +3228,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text(
             header + fmt(analysis) + "\n\n🎨 <i>¿Qué deseas hacer con este documento?</i>",
-            reply_markup=DOC_KEYBOARD,
+            reply_markup=ARTIFACT_KEYBOARD,
             parse_mode="HTML"
         )
     except Exception:
-        await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=DOC_KEYBOARD)
+        await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=ARTIFACT_KEYBOARD)
 
 
 async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
