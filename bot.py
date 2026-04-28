@@ -3421,6 +3421,28 @@ Coordina los agentes, sintetiza resultados y entrega análisis ejecutivos estilo
 
 También puedes enviar una imagen, PDF, Word o Excel y los agentes lo analizarán."""
 
+async def rag_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activa NotebookRAG directamente sin necesidad de subir archivo."""
+    if not rag.col or rag.col.count() == 0:
+        await update.message.reply_text(
+            "⚠️ Base de conocimiento vacía.\n"
+            "Sube un documento y presiona <b>📥 RAG</b> para indexarlo.",
+            parse_mode="HTML"
+        )
+        return
+
+    context.user_data["nlm_mode"] = True
+    docs = rag.list_documents()
+    total = rag.col.count()
+    doc_list = "\n".join(f"• {d}" for d in docs)
+    await update.message.reply_text(
+        f"📖 <b>NotebookRAG</b> — {len(docs)} documento(s) · {total} fragmentos\n\n"
+        f"{doc_list}\n\n"
+        "Escribe tu pregunta:",
+        parse_mode="HTML"
+    )
+
+
 async def nlm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Consulta la base de conocimiento Arauco via RAG + Claude."""
     question = " ".join(context.args).strip() if context.args else ""
@@ -3542,6 +3564,7 @@ async def post_init(application):
         BotCommand("facilitation","🤝 Facilitación de talleres Lean"),
         BotCommand("telemetry",   "📊 Telemetría de maquinaria forestal"),
         BotCommand("artifact",    "🎨 Genera HTML, Excel o gráfico PNG"),
+        BotCommand("rag",         "📖 Consultar base de conocimiento indexada"),
     ])
 
 app = (
@@ -3552,6 +3575,7 @@ app = (
     .build()
 )
 
+app.add_handler(CommandHandler("rag",        rag_handler))
 app.add_handler(CommandHandler("start",      start_handler))
 app.add_handler(CommandHandler("reset",      reset_handler))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
