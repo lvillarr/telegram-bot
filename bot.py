@@ -3346,7 +3346,7 @@ async def documentos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE)
         doc_list = "\n".join(f"• {d}" for d in docs)
         context.user_data["nlm_mode"] = True
         await update.message.reply_text(
-            f"📖 <b>Base de conocimiento</b> — {len(docs)} documento(s) · {total} fragmentos\n\n"
+            f"📖 <b>NotebookRAG</b> — {len(docs)} documento(s) · {total} fragmentos\n\n"
             f"{doc_list}\n\n"
             "Escribe tu pregunta:",
             parse_mode="HTML"
