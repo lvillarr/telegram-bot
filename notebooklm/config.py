@@ -19,12 +19,16 @@ BROWSER_STATE_DIR.mkdir(parents=True, exist_ok=True)
 BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
 
 # Decode state.json from env var if present (Railway — no volume needed)
+# Always write on startup so ephemeral containers always have fresh auth
 _state_b64 = os.environ.get("NOTEBOOKLM_STATE_B64", "")
-if _state_b64 and not STATE_FILE.exists():
+if _state_b64:
     try:
         STATE_FILE.write_bytes(base64.b64decode(_state_b64))
+        print(f"[NLM] state.json written ({STATE_FILE.stat().st_size} bytes) to {STATE_FILE}")
     except Exception as _e:
-        print(f"Warning: could not decode NOTEBOOKLM_STATE_B64: {_e}")
+        print(f"[NLM] ERROR decoding NOTEBOOKLM_STATE_B64: {_e}")
+else:
+    print(f"[NLM] NOTEBOOKLM_STATE_B64 not set — auth state: {STATE_FILE.exists()}")
 
 NOTEBOOK_URL = os.environ.get(
     "NOTEBOOKLM_NOTEBOOK_URL",
