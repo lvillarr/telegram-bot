@@ -9,10 +9,17 @@ import asyncio
 import logging
 import threading
 import tempfile
+import sys
 from datetime import datetime
 import anthropic
 import groq as groq_lib
 import rag
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), 'notebooklm'))
+try:
+    from query import ask as _nlm_ask
+    _NLM_AVAILABLE = True
+except ImportError:
+    _NLM_AVAILABLE = False
 import openpyxl
 import pdfplumber
 from collections import OrderedDict
@@ -3357,6 +3364,39 @@ Coordina los agentes, sintetiza resultados y entrega análisis ejecutivos estilo
 
 También puedes enviar una imagen, PDF, Word o Excel y los agentes lo analizarán."""
 
+async def nlm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Consulta la base de conocimiento Arauco en NotebookLM."""
+    if not _NLM_AVAILABLE:
+        await update.message.reply_text("Base de conocimiento no disponible en este entorno.")
+        return
+
+    question = " ".join(context.args).strip() if context.args else ""
+    if not question:
+        await update.message.reply_text(
+            "Uso: /nlm <pregunta>\n\nEjemplo: /nlm ¿Cuál es el procedimiento de parada de emergencia de la linea 3?"
+        )
+        return
+
+    await update.message.reply_text("Consultando base de conocimiento Arauco...")
+
+    loop = asyncio.get_event_loop()
+    try:
+        answer = await asyncio.wait_for(
+            loop.run_in_executor(None, _nlm_ask, question),
+            timeout=130
+        )
+        # Telegram max 4096 chars
+        if len(answer) > 4000:
+            answer = answer[:3990] + "\n\n_(respuesta truncada)_"
+        await update.message.reply_text(answer)
+    except asyncio.TimeoutError:
+        await update.message.reply_text("La consulta excedio el tiempo limite (2 min). Intenta con una pregunta mas especifica.")
+    except RuntimeError as e:
+        await update.message.reply_text(f"Error: {e}")
+    except Exception as e:
+        await update.message.reply_text(f"Error inesperado: {_safe_err(e)}")
+
+
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
@@ -3432,6 +3472,7 @@ async def post_init(application):
         BotCommand("facilitation","🤝 Facilitación de talleres Lean"),
         BotCommand("telemetry",   "📊 Telemetría de maquinaria forestal"),
         BotCommand("artifact",    "🎨 Genera HTML, Excel o gráfico PNG"),
+        BotCommand("nlm",         "📖 Consulta base de conocimiento Arauco"),
     ])
 
 app = (
@@ -3442,6 +3483,7 @@ app = (
     .build()
 )
 
+app.add_handler(CommandHandler("nlm",        nlm_handler))
 app.add_handler(CommandHandler("start",      start_handler))
 app.add_handler(CommandHandler("reset",      reset_handler))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
