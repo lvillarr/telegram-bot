@@ -27,6 +27,11 @@ def ask(question: str, notebook_url: str = None) -> str:
 
     try:
         playwright = sync_playwright().start()
+        # Log executable path so Railway logs show exactly what's missing
+        try:
+            print(f"[NLM] chromium executable: {playwright.chromium.executable_path}")
+        except Exception as _pe:
+            print(f"[NLM] could not get executable_path: {_pe}")
         browser, context = BrowserFactory.launch_for_query(playwright)
 
         page = context.new_page()
