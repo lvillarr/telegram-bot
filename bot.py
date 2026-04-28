@@ -739,12 +739,12 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("🖥️ PPT",   callback_data="art_pptx"),
     InlineKeyboardButton("📄 PDF",   callback_data="art_pdf"),
 ], [
-    InlineKeyboardButton("📅 Gantt",          callback_data="art_gantt"),
-    InlineKeyboardButton("🌐 HTML",           callback_data="art_html"),
-    InlineKeyboardButton("📧 Email",          callback_data="art_email"),
+    InlineKeyboardButton("📅 Gantt", callback_data="art_gantt"),
+    InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
+    InlineKeyboardButton("📧 Email", callback_data="art_email"),
 ], [
-    InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
-    InlineKeyboardButton("📖 NotebookRAG",    callback_data="nlm_ask"),
+    InlineKeyboardButton("📥 RAG",         callback_data="rag_index"),
+    InlineKeyboardButton("📖 NotebookRAG", callback_data="nlm_ask"),
 ]])
 
 MODELS = {
@@ -3278,55 +3278,50 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def nlm_ask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Activa modo NotebookRAG — espera la pregunta del usuario."""
+    """Activa modo NotebookRAG — muestra base disponible y espera pregunta."""
     query = update.callback_query
     await query.answer()
 
     if not rag.col or rag.col.count() == 0:
         await query.message.reply_text(
             "⚠️ Base de conocimiento vacía.\n"
-            "Primero indexa el documento con *Indexar en RAG* y vuelve a intentarlo.",
-            parse_mode="Markdown"
+            "Indexa documentos con <b>📥 RAG</b> primero.",
+            parse_mode="HTML"
         )
         return
 
     context.user_data["nlm_mode"] = True
     docs = rag.list_documents()
-    doc_list = "\n".join(f"  • {d}" for d in docs[:5])
+    total = rag.col.count()
+    doc_list = "\n".join(f"• {d}" for d in docs)
     await query.message.reply_text(
-        "📖 *NotebookRAG activo*\n\n"
-        f"Documentos disponibles:\n{doc_list}\n\n"
+        f"📖 <b>NotebookRAG</b> — {len(docs)} documento(s) · {total} fragmentos\n\n"
+        f"{doc_list}\n\n"
         "Escribe tu pregunta:",
-        parse_mode="Markdown"
+        parse_mode="HTML"
     )
 
 
 async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Indexa el último documento analizado en ChromaDB."""
+    """Indexa el documento actual en RAG con respuesta compacta."""
     query = update.callback_query
     await query.answer()
 
     pending = context.user_data.get("pending_index")
     if not pending:
-        await query.edit_message_reply_markup(reply_markup=None)
         await query.message.reply_text("⚠️ No hay documento pendiente de indexar.")
         return
 
     await query.edit_message_reply_markup(reply_markup=None)
-    await query.message.reply_text(
-        f"⏳ Indexando *{pending['filename']}*...\n"
-        "_Documentos grandes pueden tardar varios minutos._",
-        parse_mode="Markdown"
-    )
 
     try:
         n = rag.index_document(pending["content"], pending["filename"])
         context.user_data.pop("pending_index", None)
+        docs = rag.list_documents()
         await query.message.reply_text(
-            f"✅ *{pending['filename']}* indexado correctamente.\n"
-            f"_{n} fragmentos almacenados en la base de conocimiento._\n\n"
-            "Ahora puedo usar este documento para responder preguntas.",
-            parse_mode="Markdown"
+            f"✅ <b>{_html.escape(pending['filename'])}</b> indexado ({n} fragmentos)\n"
+            f"Base: {len(docs)} documento(s) disponible(s).",
+            parse_mode="HTML"
         )
     except Exception as e:
         await query.message.reply_text(f"⚠️ Error al indexar: {_safe_err(e)}")
