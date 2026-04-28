@@ -3,6 +3,7 @@ NotebookLM configuration — paths driven by env vars for Railway compatibility
 """
 
 import os
+import base64
 from pathlib import Path
 
 # DATA_DIR: Railway volume at /data/notebooklm, locally ~/.notebooklm
@@ -16,6 +17,14 @@ AUTH_INFO_FILE = DATA_DIR / "auth_info.json"
 # Create dirs if missing
 BROWSER_STATE_DIR.mkdir(parents=True, exist_ok=True)
 BROWSER_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
+
+# Decode state.json from env var if present (Railway — no volume needed)
+_state_b64 = os.environ.get("NOTEBOOKLM_STATE_B64", "")
+if _state_b64 and not STATE_FILE.exists():
+    try:
+        STATE_FILE.write_bytes(base64.b64decode(_state_b64))
+    except Exception as _e:
+        print(f"Warning: could not decode NOTEBOOKLM_STATE_B64: {_e}")
 
 NOTEBOOK_URL = os.environ.get(
     "NOTEBOOKLM_NOTEBOOK_URL",
