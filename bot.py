@@ -3121,6 +3121,11 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    if context.user_data.get("nlm_mode"):
+        context.user_data.pop("nlm_mode")
+        await _handle_nlm_query(update, context, transcript)
+        return
+
     await update.message.reply_text("🤖 Analizando con los agentes...")
 
     try:
