@@ -1,52 +1,44 @@
 """
-Browser utilities for NotebookLM — uses bundled Chromium (no system Chrome needed)
+Browser utilities — uses launch + new_context(storage_state) instead of
+launch_persistent_context, so it works with headless-shell on Railway.
 """
 
-import json
 import os
 import time
 import random
 
-from patchright.sync_api import Playwright, BrowserContext, Page
-from config import BROWSER_PROFILE_DIR, STATE_FILE, BROWSER_ARGS, USER_AGENT
+from patchright.sync_api import Playwright, Browser, BrowserContext, Page
+from config import STATE_FILE, BROWSER_ARGS, USER_AGENT
 
 
 class BrowserFactory:
 
     @staticmethod
-    def launch_persistent_context(
-        playwright: Playwright,
-        headless: bool = True,
-        user_data_dir: str = str(BROWSER_PROFILE_DIR)
-    ) -> BrowserContext:
-        # Use channel="chrome" locally if available, else bundled chromium (Railway)
-        channel = os.environ.get("PLAYWRIGHT_CHANNEL", None)
+    def launch_for_query(playwright: Playwright) -> tuple[Browser, BrowserContext]:
+        """Headless browser with auth state loaded from state.json."""
+        storage = str(STATE_FILE) if STATE_FILE.exists() else None
 
-        kwargs = dict(
-            user_data_dir=user_data_dir,
-            headless=headless,
-            no_viewport=True,
-            ignore_default_args=["--enable-automation"],
-            user_agent=USER_AGENT,
+        browser = playwright.chromium.launch(
+            headless=True,
             args=BROWSER_ARGS,
         )
-        if channel:
-            kwargs["channel"] = channel
-
-        context = playwright.chromium.launch_persistent_context(**kwargs)
-        BrowserFactory._inject_cookies(context)
-        return context
+        context = browser.new_context(
+            user_agent=USER_AGENT,
+            storage_state=storage,
+        )
+        return browser, context
 
     @staticmethod
-    def _inject_cookies(context: BrowserContext):
-        if STATE_FILE.exists():
-            try:
-                with open(STATE_FILE, 'r') as f:
-                    state = json.load(f)
-                    if state.get('cookies'):
-                        context.add_cookies(state['cookies'])
-            except Exception as e:
-                print(f"Warning: could not load state.json: {e}")
+    def launch_for_auth(playwright: Playwright, headless: bool = False) -> tuple[Browser, BrowserContext]:
+        """Visible browser for interactive Google login (local only)."""
+        channel = os.environ.get("PLAYWRIGHT_CHANNEL", "chrome")
+        browser = playwright.chromium.launch(
+            channel=channel,
+            headless=headless,
+            args=BROWSER_ARGS,
+        )
+        context = browser.new_context(user_agent=USER_AGENT)
+        return browser, context
 
 
 class StealthUtils:
@@ -56,17 +48,15 @@ class StealthUtils:
         time.sleep(random.uniform(min_ms / 1000, max_ms / 1000))
 
     @staticmethod
-    def human_type(page: Page, selector: str, text: str, wpm_min: int = 320, wpm_max: int = 480):
+    def human_type(page: Page, selector: str, text: str):
         element = page.query_selector(selector)
         if not element:
             try:
                 element = page.wait_for_selector(selector, timeout=2000)
             except Exception:
                 pass
-
         if not element:
             return
-
         element.click()
         for char in text:
             element.type(char, delay=random.uniform(25, 75))

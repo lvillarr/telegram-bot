@@ -1,12 +1,11 @@
 """
-AuthManager for NotebookLM — manages browser state / Google auth persistence
+AuthManager — manages Google auth state for NotebookLM
 """
 
 import json
 import re
 import time
 from datetime import datetime, timezone
-from pathlib import Path
 
 from patchright.sync_api import sync_playwright
 from config import STATE_FILE, AUTH_INFO_FILE, BROWSER_STATE_DIR, LOGIN_TIMEOUT_MINUTES
@@ -23,8 +22,7 @@ class AuthManager:
         if AUTH_INFO_FILE.exists():
             try:
                 with open(AUTH_INFO_FILE) as f:
-                    saved = json.load(f)
-                info.update(saved)
+                    info.update(json.load(f))
             except Exception:
                 pass
         if STATE_FILE.exists():
@@ -34,22 +32,19 @@ class AuthManager:
 
     def setup_auth(self, headless: bool = False, timeout_minutes: int = LOGIN_TIMEOUT_MINUTES) -> bool:
         playwright = None
-        context = None
+        browser = None
         try:
             playwright = sync_playwright().start()
-            context = BrowserFactory.launch_persistent_context(playwright, headless=headless)
+            browser, context = BrowserFactory.launch_for_auth(playwright, headless=headless)
 
             page = context.new_page()
             page.goto("https://notebooklm.google.com/", wait_until="domcontentloaded")
 
             # Already logged in?
             try:
-                page.wait_for_url(
-                    re.compile(r"^https://notebooklm\.google\.com/"),
-                    timeout=5000
-                )
-                if "notebooklm.google.com" in page.url and "accounts.google" not in page.url:
-                    self._save_browser_state(context)
+                page.wait_for_url(re.compile(r"^https://notebooklm\.google\.com/"), timeout=5000)
+                if "accounts.google" not in page.url:
+                    self._save_state(context)
                     return True
             except Exception:
                 pass
@@ -58,7 +53,7 @@ class AuthManager:
             timeout_ms = int(timeout_minutes * 60 * 1000)
             page.wait_for_url(re.compile(r"^https://notebooklm\.google\.com/"), timeout=timeout_ms)
 
-            self._save_browser_state(context)
+            self._save_state(context)
             self._save_auth_info()
             return True
 
@@ -66,9 +61,9 @@ class AuthManager:
             print(f"Auth setup failed: {e}")
             return False
         finally:
-            if context:
+            if browser:
                 try:
-                    context.close()
+                    browser.close()
                 except Exception:
                     pass
             if playwright:
@@ -77,7 +72,7 @@ class AuthManager:
                 except Exception:
                     pass
 
-    def _save_browser_state(self, context):
+    def _save_state(self, context):
         BROWSER_STATE_DIR.mkdir(parents=True, exist_ok=True)
         state = context.storage_state()
         with open(STATE_FILE, 'w') as f:

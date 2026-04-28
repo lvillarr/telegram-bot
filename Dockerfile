@@ -15,8 +15,8 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Instalar Chromium en imagen (baked — no descarga en runtime)
-RUN patchright install chromium
+# Instalar Chromium con todas las dependencias del sistema
+RUN patchright install --with-deps chromium
 
 COPY . .
 

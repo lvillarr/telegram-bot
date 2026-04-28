@@ -1,24 +1,20 @@
 """
-NotebookLM query — synchronous, run in executor from async bot handlers
+NotebookLM query — synchronous, run via loop.run_in_executor() from async handler
+Uses launch + new_context(storage_state) to work with headless-shell on Railway
 """
 
 import re
-import sys
 import time
 
 from patchright.sync_api import sync_playwright
-from config import (
-    NOTEBOOK_URL, QUERY_INPUT_SELECTORS, RESPONSE_SELECTORS,
-    QUERY_TIMEOUT_SECONDS
-)
+from config import NOTEBOOK_URL, QUERY_INPUT_SELECTORS, RESPONSE_SELECTORS, QUERY_TIMEOUT_SECONDS
 from browser_utils import BrowserFactory, StealthUtils
 from auth_manager import AuthManager
 
 
 def ask(question: str, notebook_url: str = None) -> str:
     """
-    Query NotebookLM synchronously. Returns answer text or raises RuntimeError.
-    Intended to be run via loop.run_in_executor() from async bot handler.
+    Query NotebookLM. Returns answer text or raises RuntimeError.
     """
     url = notebook_url or NOTEBOOK_URL
 
@@ -27,17 +23,21 @@ def ask(question: str, notebook_url: str = None) -> str:
         raise RuntimeError("NotebookLM no autenticado. Contactar al administrador.")
 
     playwright = None
-    context = None
+    browser = None
 
     try:
         playwright = sync_playwright().start()
-        context = BrowserFactory.launch_persistent_context(playwright, headless=True)
+        browser, context = BrowserFactory.launch_for_query(playwright)
 
         page = context.new_page()
         page.goto(url, wait_until="domcontentloaded")
 
-        # Redirect check — if sent to login, auth expired
-        page.wait_for_url(re.compile(r"^https://notebooklm\.google\.com/"), timeout=15000)
+        # If redirected to login, auth expired
+        try:
+            page.wait_for_url(re.compile(r"^https://notebooklm\.google\.com/"), timeout=15000)
+        except Exception:
+            pass
+
         if "accounts.google" in page.url:
             raise RuntimeError("Sesion de NotebookLM expirada. Requiere re-autenticacion.")
 
@@ -100,9 +100,9 @@ def ask(question: str, notebook_url: str = None) -> str:
         return answer
 
     finally:
-        if context:
+        if browser:
             try:
-                context.close()
+                browser.close()
             except Exception:
                 pass
         if playwright:
