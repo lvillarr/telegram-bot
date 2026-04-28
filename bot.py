@@ -3318,9 +3318,14 @@ async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         n = rag.index_document(pending["content"], pending["filename"])
         context.user_data.pop("pending_index", None)
         docs = rag.list_documents()
+        total = rag.col.count()
+        doc_list = "\n".join(f"• {d}" for d in docs)
+        context.user_data["nlm_mode"] = True
         await query.message.reply_text(
-            f"✅ <b>{_html.escape(pending['filename'])}</b> indexado ({n} fragmentos)\n"
-            f"Base: {len(docs)} documento(s) disponible(s).",
+            f"✅ <b>{_html.escape(pending['filename'])}</b> indexado ({n} fragmentos)\n\n"
+            f"📖 <b>Base de conocimiento</b> — {len(docs)} documento(s) · {total} fragmentos\n"
+            f"{doc_list}\n\n"
+            "Escribe tu pregunta:",
             parse_mode="HTML"
         )
     except Exception as e:
@@ -3328,21 +3333,23 @@ async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def documentos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Lista todos los documentos indexados en RAG."""
+    """Lista documentos indexados y activa NotebookRAG para consulta inmediata."""
     try:
-        docs   = rag.list_documents()
-        total  = rag.col.count()
+        docs  = rag.list_documents()
+        total = rag.col.count() if rag.col else 0
         if not docs:
             await update.message.reply_text(
-                "📚 La base de conocimiento está vacía.\n"
-                "Sube un PDF, Word o Excel y presiona <b>📚 Indexar en RAG</b>.",
+                "📚 Base de conocimiento vacía.\n"
+                "Sube un PDF, Word o Excel y presiona <b>📥 RAG</b>.",
                 parse_mode="HTML"
             )
             return
-        lista = "\n".join(f"• {d}" for d in docs)
+        doc_list = "\n".join(f"• {d}" for d in docs)
+        context.user_data["nlm_mode"] = True
         await update.message.reply_text(
-            f"📚 <b>Documentos indexados ({len(docs)}):</b>\n"
-            f"<i>{total} fragmentos totales en la base de conocimiento</i>\n\n{lista}",
+            f"📖 <b>Base de conocimiento</b> — {len(docs)} documento(s) · {total} fragmentos\n\n"
+            f"{doc_list}\n\n"
+            "Escribe tu pregunta:",
             parse_mode="HTML"
         )
     except Exception as e:
@@ -3564,7 +3571,6 @@ async def post_init(application):
         BotCommand("facilitation","🤝 Facilitación de talleres Lean"),
         BotCommand("telemetry",   "📊 Telemetría de maquinaria forestal"),
         BotCommand("artifact",    "🎨 Genera HTML, Excel o gráfico PNG"),
-        BotCommand("rag",         "📖 Consultar base de conocimiento indexada"),
     ])
 
 app = (
@@ -3575,7 +3581,6 @@ app = (
     .build()
 )
 
-app.add_handler(CommandHandler("rag",        rag_handler))
 app.add_handler(CommandHandler("start",      start_handler))
 app.add_handler(CommandHandler("reset",      reset_handler))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
