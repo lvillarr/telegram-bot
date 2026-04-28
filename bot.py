@@ -743,7 +743,7 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("🌐 HTML",  callback_data="art_html"),
     InlineKeyboardButton("📧 Email", callback_data="art_email"),
 ], [
-    InlineKeyboardButton("📥 RAG", callback_data="rag_index"),
+    InlineKeyboardButton("📥 Indexar RAG", callback_data="rag_index"),
 ]])
 
 MODELS = {
@@ -3322,14 +3322,9 @@ async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         n = rag.index_document(pending["content"], pending["filename"])
         context.user_data.pop("pending_index", None)
         docs = rag.list_documents()
-        total = rag.col.count()
-        doc_list = "\n".join(f"• {d}" for d in docs)
-        context.user_data["nlm_mode"] = True
         await query.message.reply_text(
-            f"✅ <b>{_html.escape(pending['filename'])}</b> indexado ({n} fragmentos)\n\n"
-            f"📖 <b>Base de conocimiento</b> — {len(docs)} documento(s) · {total} fragmentos\n"
-            f"{doc_list}\n\n"
-            "Escribe tu pregunta:",
+            f"✅ <b>{_html.escape(pending['filename'])}</b> indexado ({n} fragmentos)\n"
+            f"Base: {len(docs)} documento(s). Usa /notebookrag para consultar.",
             parse_mode="HTML"
         )
     except Exception as e:
@@ -3563,7 +3558,7 @@ async def post_init(application):
         BotCommand("reset",       "🔄 Reiniciar conversación"),
         BotCommand("modelo",      "🤖 Seleccionar modelo LLM"),
         BotCommand("indexar",     "📚 Cómo indexar documentos en RAG"),
-        BotCommand("documentos",  "📂 Ver documentos indexados"),
+        BotCommand("notebookrag", "📖 Consultar base de conocimiento Arauco"),
         BotCommand("spec",        "📋 Especificación de iniciativa forestal"),
         BotCommand("plan",        "🗺️ Plan de ejecución forestal"),
         BotCommand("build",       "🔨 Construcción de solución forestal"),
@@ -3589,7 +3584,8 @@ app.add_handler(CommandHandler("start",      start_handler))
 app.add_handler(CommandHandler("reset",      reset_handler))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
 app.add_handler(CommandHandler("indexar",    indexar_handler))
-app.add_handler(CommandHandler("documentos", documentos_handler))
+app.add_handler(CommandHandler("notebookrag", documentos_handler))
+app.add_handler(CommandHandler("documentos",  documentos_handler))
 app.add_handler(CommandHandler("buscar",     buscar_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
 app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
