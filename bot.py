@@ -1059,7 +1059,8 @@ async def _handle_nlm_query(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     if not chunks:
         await update.message.reply_text(
             f"🔍 Sin resultados para <i>{_html.escape(question)}</i> en la base de conocimiento.\n\n"
-            "Verifica con /documentos que los archivos estén indexados.",
+            "Los documentos están indexados pero ningún fragmento superó el umbral de relevancia. "
+            "Intenta reformular la pregunta o usa /notebookrag para ver los documentos disponibles.",
             parse_mode="HTML"
         )
         return

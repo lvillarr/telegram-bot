@@ -12,7 +12,7 @@ CHROMA_PATH     = os.environ.get("CHROMA_PATH", "/data/chroma")
 COLLECTION_NAME = "arauco_docs"
 EMBED_MODEL     = "voyage-3"
 TOP_K           = 4
-MAX_DISTANCE    = 0.45   # umbral de similitud coseno (menor = más similar)
+MAX_DISTANCE    = 0.55   # umbral de similitud coseno (menor = más similar)
 
 # ── Clientes ──────────────────────────────────────────────────────────────────
 voyage  = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY", ""))
