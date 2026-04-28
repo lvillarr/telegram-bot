@@ -744,6 +744,7 @@ DOC_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("📧 Email",          callback_data="art_email"),
 ], [
     InlineKeyboardButton("📚 Indexar en RAG", callback_data="rag_index"),
+    InlineKeyboardButton("📖 NotebookRAG",    callback_data="nlm_ask"),
 ]])
 
 MODELS = {
@@ -1053,8 +1054,51 @@ def _email_preview(data: dict, n_adjuntos: int = 0) -> str:
     return "\n".join(lines)
 
 
+async def _handle_nlm_query(update: Update, context: ContextTypes.DEFAULT_TYPE, question: str):
+    """Responde pregunta via RAG + Claude con formato estructurado."""
+    chunks = rag.query(question)
+    if not chunks:
+        await update.message.reply_text(
+            f"🔍 Sin resultados para <i>{_html.escape(question)}</i> en la base de conocimiento.\n\n"
+            "Verifica con /documentos que los archivos estén indexados.",
+            parse_mode="HTML"
+        )
+        return
+
+    rag_context = rag.build_context(question)
+    system = (
+        "Eres el asistente de base de conocimiento de Arauco — Subgerencia de Mejora Continua.\n"
+        "Responde ÚNICAMENTE basado en los documentos del contexto.\n"
+        "Si la información no está en los documentos, indícalo claramente.\n\n"
+        "FORMATO OBLIGATORIO de respuesta:\n"
+        "# Resumen: [titulo descriptivo de la pregunta]\n\n"
+        "Párrafo introductorio breve.\n\n"
+        "## 1. **[Seccion principal]**\n"
+        "- punto clave con **termino importante** destacado\n"
+        "- otro punto (FUENTE: nombre_archivo)\n\n"
+        "## 2. **[Otra seccion]**\n"
+        "...\n\n"
+        "---\n"
+        "**Nota:** indicar si falta información o se requieren secciones adicionales del documento.\n\n"
+        "Usa numeración en secciones, negrita para términos técnicos clave, y cita el archivo fuente entre paréntesis."
+        + rag_context
+    )
+
+    try:
+        resp = claude_response(system, question, max_tokens=1200)
+        await update.message.reply_text(fmt(resp), parse_mode="HTML")
+    except Exception as e:
+        await update.message.reply_text(f"⚠️ Error: {_safe_err(e)}")
+
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_msg = update.message.text
+
+    # Intercepta modo NotebookRAG
+    if context.user_data.get("nlm_mode"):
+        context.user_data.pop("nlm_mode")
+        await _handle_nlm_query(update, context, user_msg)
+        return
 
     # Intercepta edición de campo del email
     if context.user_data.get("editing_email_field"):
@@ -3233,6 +3277,30 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text(f"⚠️ Error al enviar: {_safe_err(e)}")
 
 
+async def nlm_ask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activa modo NotebookRAG — espera la pregunta del usuario."""
+    query = update.callback_query
+    await query.answer()
+
+    if not rag.col or rag.col.count() == 0:
+        await query.message.reply_text(
+            "⚠️ Base de conocimiento vacía.\n"
+            "Primero indexa el documento con *Indexar en RAG* y vuelve a intentarlo.",
+            parse_mode="Markdown"
+        )
+        return
+
+    context.user_data["nlm_mode"] = True
+    docs = rag.list_documents()
+    doc_list = "\n".join(f"  • {d}" for d in docs[:5])
+    await query.message.reply_text(
+        "📖 *NotebookRAG activo*\n\n"
+        f"Documentos disponibles:\n{doc_list}\n\n"
+        "Escribe tu pregunta:",
+        parse_mode="Markdown"
+    )
+
+
 async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Indexa el último documento analizado en ChromaDB."""
     query = update.callback_query
@@ -3479,7 +3547,6 @@ async def post_init(application):
         BotCommand("facilitation","🤝 Facilitación de talleres Lean"),
         BotCommand("telemetry",   "📊 Telemetría de maquinaria forestal"),
         BotCommand("artifact",    "🎨 Genera HTML, Excel o gráfico PNG"),
-        BotCommand("nlm",         "📖 Consulta base de conocimiento Arauco"),
     ])
 
 app = (
@@ -3490,7 +3557,6 @@ app = (
     .build()
 )
 
-app.add_handler(CommandHandler("nlm",        nlm_handler))
 app.add_handler(CommandHandler("start",      start_handler))
 app.add_handler(CommandHandler("reset",      reset_handler))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
@@ -3499,6 +3565,7 @@ app.add_handler(CommandHandler("documentos", documentos_handler))
 app.add_handler(CommandHandler("buscar",     buscar_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
 app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
+app.add_handler(CallbackQueryHandler(nlm_ask_callback,     pattern="^nlm_ask$"))
 app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel|edit.*)$"))
 app.add_handler(CallbackQueryHandler(notas_callback,        pattern="^notas_"))
 app.add_handler(CallbackQueryHandler(image_callback,        pattern="^img_"))
