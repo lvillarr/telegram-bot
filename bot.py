@@ -9,7 +9,7 @@ import asyncio
 import logging
 import threading
 import tempfile
-import sys
+
 from datetime import datetime
 import anthropic
 import groq as groq_lib
@@ -3280,31 +3280,6 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.message.reply_text(f"⚠️ Error al enviar: {_safe_err(e)}")
 
 
-async def nlm_ask_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Activa modo NotebookRAG — muestra base disponible y espera pregunta."""
-    query = update.callback_query
-    await query.answer()
-
-    if not rag.col or rag.col.count() == 0:
-        await query.message.reply_text(
-            "⚠️ Base de conocimiento vacía.\n"
-            "Indexa documentos con <b>📥 RAG</b> primero.",
-            parse_mode="HTML"
-        )
-        return
-
-    context.user_data["nlm_mode"] = True
-    docs = rag.list_documents()
-    total = rag.col.count()
-    doc_list = "\n".join(f"• {d}" for d in docs)
-    await query.message.reply_text(
-        f"📖 <b>NotebookRAG</b> — {len(docs)} documento(s) · {total} fragmentos\n\n"
-        f"{doc_list}\n\n"
-        "Escribe tu pregunta:",
-        parse_mode="HTML"
-    )
-
-
 async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Indexa el documento actual en RAG con respuesta compacta."""
     query = update.callback_query
@@ -3426,74 +3401,6 @@ Coordina los agentes, sintetiza resultados y entrega análisis ejecutivos estilo
 
 También puedes enviar una imagen, PDF, Word o Excel y los agentes lo analizarán."""
 
-async def rag_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Activa NotebookRAG directamente sin necesidad de subir archivo."""
-    if not rag.col or rag.col.count() == 0:
-        await update.message.reply_text(
-            "⚠️ Base de conocimiento vacía.\n"
-            "Sube un documento y presiona <b>📥 RAG</b> para indexarlo.",
-            parse_mode="HTML"
-        )
-        return
-
-    context.user_data["nlm_mode"] = True
-    docs = rag.list_documents()
-    total = rag.col.count()
-    doc_list = "\n".join(f"• {d}" for d in docs)
-    await update.message.reply_text(
-        f"📖 <b>NotebookRAG</b> — {len(docs)} documento(s) · {total} fragmentos\n\n"
-        f"{doc_list}\n\n"
-        "Escribe tu pregunta:",
-        parse_mode="HTML"
-    )
-
-
-async def nlm_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Consulta la base de conocimiento Arauco via RAG + Claude."""
-    question = " ".join(context.args).strip() if context.args else ""
-    if not question:
-        await update.message.reply_text(
-            "Uso: /nlm <pregunta>\n\n"
-            "Ejemplo: /nlm ¿Cual es el procedimiento de volteo mecanizado en pendientes?",
-            parse_mode="Markdown"
-        )
-        return
-
-    if not rag.col or rag.col.count() == 0:
-        await update.message.reply_text(
-            "Base de conocimiento vacia.\n"
-            "Sube tus documentos Arauco (PDF, Word, Excel) y presiona *Indexar en RAG*.",
-            parse_mode="Markdown"
-        )
-        return
-
-    chunks = rag.query(question)
-    if not chunks:
-        await update.message.reply_text(
-            f"No encontre informacion relevante sobre _{_html.escape(question)}_ "
-            "en la base de conocimiento.\n\nVerifica con /documentos que los archivos esten indexados.",
-            parse_mode="Markdown"
-        )
-        return
-
-    rag_context = rag.build_context(question)
-    system = (
-        "Eres el asistente de base de conocimiento de Arauco — Subgerencia de Mejora Continua. "
-        "Responde UNICAMENTE basado en los documentos del contexto. "
-        "Si la informacion no esta en los documentos, indicalo claramente. "
-        "Cita el nombre del documento entre parentesis como fuente al final de cada dato relevante."
-        + rag_context
-    )
-
-    try:
-        resp = claude_response(system, question, max_tokens=1024)
-        if len(resp) > 4000:
-            resp = resp[:3990] + "\n\n_(respuesta truncada)_"
-        await update.message.reply_text(resp)
-    except Exception as e:
-        await update.message.reply_text(f"Error al consultar: {_safe_err(e)}")
-
-
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
@@ -3588,7 +3495,7 @@ app.add_handler(CommandHandler("documentos",  documentos_handler))
 app.add_handler(CommandHandler("buscar",     buscar_handler))
 app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
 app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
-app.add_handler(CallbackQueryHandler(nlm_ask_callback,     pattern="^nlm_ask$"))
+
 app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel|edit.*)$"))
 app.add_handler(CallbackQueryHandler(notas_callback,        pattern="^notas_"))
 app.add_handler(CallbackQueryHandler(image_callback,        pattern="^img_"))
