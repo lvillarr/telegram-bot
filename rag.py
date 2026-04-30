@@ -54,19 +54,25 @@ def _embed_with_retry(texts: list, input_type: str, max_retries: int = 5) -> lis
     raise RuntimeError("Se superó el límite de reintentos de Voyage AI.")
 
 
-def index_document(text: str, filename: str) -> int:
-    """Indexa un documento y retorna el número de fragmentos almacenados."""
+def index_document(text: str, filename: str, on_batch=None) -> int:
+    """Indexa un documento y retorna el número de fragmentos almacenados.
+
+    on_batch(batch_actual, total_batches, chunks_procesados) se llama tras cada lote.
+    """
     chunks = chunk_text(text)
     if not chunks:
         return 0
 
     # Procesar en lotes de 8 para no superar rate limits en tier gratuito
     BATCH = 8
+    total_batches = (len(chunks) + BATCH - 1) // BATCH
     all_embeddings = []
-    for i in range(0, len(chunks), BATCH):
+    for batch_i, i in enumerate(range(0, len(chunks), BATCH)):
         batch = chunks[i : i + BATCH]
         embeddings = _embed_with_retry(batch, input_type="document")
         all_embeddings.extend(embeddings)
+        if on_batch:
+            on_batch(batch_i + 1, total_batches, len(all_embeddings))
         if i + BATCH < len(chunks):
             time.sleep(21)   # pausa entre lotes para respetar 3 RPM
 

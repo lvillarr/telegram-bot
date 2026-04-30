@@ -3282,7 +3282,7 @@ async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_T
 
 
 async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Indexa el documento actual en RAG con respuesta compacta."""
+    """Indexa el documento actual en RAG con progreso por lote."""
     query = update.callback_query
     await query.answer()
 
@@ -3293,17 +3293,44 @@ async def rag_index_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     await query.edit_message_reply_markup(reply_markup=None)
 
+    filename = pending["filename"]
+    chunks   = rag.chunk_text(pending["content"])
+    n_chunks = len(chunks)
+    n_batches = (n_chunks + 7) // 8
+    eta_s     = n_batches * 21
+
+    status_msg = await query.message.reply_text(
+        f"⏳ <b>{_html.escape(filename)}</b>\n"
+        f"{n_chunks} fragmentos · {n_batches} lote(s) · ~{eta_s}s",
+        parse_mode="HTML"
+    )
+
+    loop = asyncio.get_running_loop()
+
+    def on_batch(current, total, n_done):
+        asyncio.run_coroutine_threadsafe(
+            status_msg.edit_text(
+                f"⏳ <b>{_html.escape(filename)}</b>\n"
+                f"Lote {current}/{total} · {n_done}/{n_chunks} fragmentos",
+                parse_mode="HTML"
+            ),
+            loop
+        )
+
     try:
-        n = rag.index_document(pending["content"], pending["filename"])
+        n = await loop.run_in_executor(
+            None,
+            lambda: rag.index_document(pending["content"], filename, on_batch=on_batch)
+        )
         context.user_data.pop("pending_index", None)
         docs = rag.list_documents()
-        await query.message.reply_text(
-            f"✅ <b>{_html.escape(pending['filename'])}</b> indexado ({n} fragmentos)\n"
+        await status_msg.edit_text(
+            f"✅ <b>{_html.escape(filename)}</b> indexado — {n} fragmentos\n"
             f"Base: {len(docs)} documento(s). Usa /notebookrag para consultar.",
             parse_mode="HTML"
         )
     except Exception as e:
-        await query.message.reply_text(f"⚠️ Error al indexar: {_safe_err(e)}")
+        await status_msg.edit_text(f"⚠️ Error al indexar: {_safe_err(e)}", parse_mode="HTML")
 
 
 async def documentos_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
