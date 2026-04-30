@@ -3228,11 +3228,11 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         await update.message.reply_text(
             header + fmt(analysis) + "\n\n🎨 <i>¿Qué deseas hacer con este documento?</i>",
-            reply_markup=ARTIFACT_KEYBOARD,
+            reply_markup=DOC_KEYBOARD,
             parse_mode="HTML"
         )
     except Exception:
-        await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=ARTIFACT_KEYBOARD, context=context)
+        await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=DOC_KEYBOARD, context=context)
 
 
 async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
