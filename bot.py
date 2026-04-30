@@ -3433,6 +3433,27 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
 
+async def planner_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Abre el selector de Planner (Desktop / Mobile)."""
+    await update.message.reply_text(
+        "📋 *Planner MC*\n\nElige el formato. Si quieres cargar tu plan, sube el Excel exportado desde Microsoft Planner antes o después de seleccionar.",
+        parse_mode="Markdown",
+        reply_markup=PLANNER_KEYBOARD
+    )
+
+
+async def notas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Activa el modo notas directamente."""
+    context.user_data["modo_notas"] = True
+    notas = context.user_data.get("notas", [])
+    n = len(notas)
+    msg = ("📝 *Modo notas activado*\n\n"
+           "Escribe lo que quieras anotar o envía un audio — "
+           "todo se guardará como nota.\n\n"
+           f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}")
+    await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD)
+
+
 def _track(context, message_id: int):
     """Registra un message_id enviado por el bot para poder borrarlo en reset."""
     if context is None:
@@ -3547,6 +3568,8 @@ async def post_init(application):
         BotCommand("facilitation","🤝 Facilitación de talleres Lean"),
         BotCommand("telemetry",   "📊 Telemetría de maquinaria forestal"),
         BotCommand("artifact",    "🎨 Genera HTML, Excel o gráfico PNG"),
+        BotCommand("planner",     "📋 Dashboard Planner MC (Desktop / Mobile)"),
+        BotCommand("notas",       "📝 Activar modo notas"),
     ])
 
 app = (
@@ -3559,6 +3582,8 @@ app = (
 
 app.add_handler(CommandHandler("start",      start_handler))
 app.add_handler(CommandHandler("reset",      reset_handler))
+app.add_handler(CommandHandler("planner",    planner_handler))
+app.add_handler(CommandHandler("notas",      notas_handler))
 app.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
 app.add_handler(CommandHandler("indexar",    indexar_handler))
