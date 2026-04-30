@@ -818,7 +818,7 @@ FILE_META = {
     "json": ("datos.json",   "📋 Datos en JSON"),
 }
 
-async def send_reply(update: Update, text: str, reply_markup=None):
+async def send_reply(update: Update, text: str, reply_markup=None, context=None):
     """
     Envía la respuesta de Claude a Telegram.
     Bloques de código ≥10 líneas se extraen y envían como archivo adjunto.
@@ -830,16 +830,17 @@ async def send_reply(update: Update, text: str, reply_markup=None):
     if not large_blocks:
         # Sin código largo — envío normal con teclado de artefactos
         try:
-            await update.message.reply_text(
+            msg = await update.message.reply_text(
                 fmt(text) + "\n\n🎨 <i>¿Generar un artefacto visual con esto?</i>",
                 reply_markup=reply_markup,
                 parse_mode="HTML"
             )
         except Exception:
-            await update.message.reply_text(
+            msg = await update.message.reply_text(
                 text + "\n\n🎨 ¿Generar un artefacto visual con esto?",
                 reply_markup=reply_markup
             )
+        _track(context, msg.message_id)
         return
 
     # Hay bloques de código largos — enviar texto limpio primero
@@ -1181,7 +1182,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = claude_response(system, user_msg, model=get_model_for_msg(context, user_msg), history=history)
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
-        await send_reply(update, reply, reply_markup=ARTIFACT_KEYBOARD)
+        await send_reply(update, reply, reply_markup=ARTIFACT_KEYBOARD, context=context)
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error al procesar: {_safe_err(e)}")
 
@@ -3231,7 +3232,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML"
         )
     except Exception:
-        await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=ARTIFACT_KEYBOARD)
+        await send_reply(update, f"{doc.file_name}\n\n{analysis}", reply_markup=ARTIFACT_KEYBOARD, context=context)
 
 
 async def email_confirm_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3405,14 +3406,57 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(START_TEXT, parse_mode="Markdown")
 
 
-async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Limpia todo el estado del usuario (historial, notas, email, imágenes)."""
+def _track(context, message_id: int):
+    """Registra un message_id enviado por el bot para poder borrarlo en reset."""
+    if context is None:
+        return
+    sent = context.user_data.setdefault("sent_messages", [])
+    sent.append(message_id)
+    if len(sent) > 500:
+        context.user_data["sent_messages"] = sent[-500:]
+
+
+async def _do_reset(chat_id: int, context) -> None:
+    """Borra mensajes del bot (best-effort ≤48h), limpia estado, envía divisor."""
+    for mid in context.user_data.get("sent_messages", []):
+        try:
+            await context.bot.delete_message(chat_id, mid)
+        except Exception:
+            pass
+
+    model = context.user_data.get("model", DEFAULT_MODEL)
     context.user_data.clear()
-    await update.message.reply_text(
-        "🔄 *Estado completamente reiniciado.* Historial, notas, borradores y modos activos fueron borrados.\n"
-        "Puedes empezar desde cero.",
-        parse_mode="Markdown"
+    context.user_data["model"] = model
+    context.user_data["sent_messages"] = []
+
+    now = datetime.now().strftime("%d %b · %H:%M")
+    await context.bot.send_message(
+        chat_id,
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━\n🆕  Nueva conversación  ·  {now}\n━━━━━━━━━━━━━━━━━━━━━━━━━"
     )
+
+
+async def reset_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Muestra confirmación antes de limpiar la conversación."""
+    kb = InlineKeyboardMarkup([[
+        InlineKeyboardButton("✅ Confirmar", callback_data="reset_confirm"),
+        InlineKeyboardButton("❌ Cancelar",  callback_data="reset_cancel"),
+    ]])
+    msg = await update.message.reply_text(
+        "¿Iniciar nueva conversación?\nSe borrará el historial y los documentos cargados.",
+        reply_markup=kb
+    )
+    _track(context, msg.message_id)
+
+
+async def reset_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Maneja confirmación/cancelación del reset."""
+    query = update.callback_query
+    await query.answer()
+    if query.data == "reset_confirm":
+        await _do_reset(query.message.chat_id, context)
+    else:
+        await query.message.delete()
 
 
 async def handle_location(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3488,6 +3532,7 @@ app = (
 
 app.add_handler(CommandHandler("start",      start_handler))
 app.add_handler(CommandHandler("reset",      reset_handler))
+app.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
 app.add_handler(CommandHandler("modelo",     modelo_handler))
 app.add_handler(CommandHandler("indexar",    indexar_handler))
 app.add_handler(CommandHandler("notebookrag", documentos_handler))
