@@ -1174,41 +1174,49 @@ function copySummary(){
   const weekStart=new Date(now);weekStart.setDate(now.getDate()-(dow===0?6:dow-1));
   const weekEnd=new Date(weekStart);weekEnd.setDate(weekStart.getDate()+6);
   const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
-  let txt=`📓 MEJORA CONTINUA — Subgerencia\n`;
-  txt+=`Resumen Semanal · ${fmt(weekStart)} al ${fmt(weekEnd)}\n`;
-  txt+=`Generado: ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'})}\n`;
-  txt+='_'.repeat(52)+'\n';
+
+  let txt=`📋 *Resumen Semana ${fmt(weekStart)} – ${fmt(weekEnd)}*\n\n`;
 
   const areaOrder=['eo','td','ai','id','im'];
+  let hasContent=false;
   areaOrder.forEach(key=>{
     const area=AREAS[key];
     if(!area.rows)return;
     const tasks=area.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)');
     if(!tasks.length)return;
-    txt+=`\n${area.icon} ${area.name.toUpperCase()}\n${'─'.repeat(40)}\n`;
+    hasContent=true;
+    txt+=`*${area.icon} ${area.name}*\n`;
     tasks.forEach(r=>{
-      const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+      const pct=gPct(r);
+      const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
       const isDone=pct===1||pct===100;
-      const ds=fDate(gEnd(r));const assign=gAssign(r)||'Sin asignar';
-      txt+=`\n${isDone?'☑':'□'} ${gName(r)}\n`;
+      const late=isLate(gEnd(r),pct);
+      const ds=fDate(gEnd(r));
+      const icon=isDone?'✅':(late?'🔴':(pctN>0?'🔵':'⬜'));
+      let line=`${icon} ${gName(r)}`;
       const meta=[];
-      if(assign)meta.push(`Responsable: ${assign}`);
-      if(ds)meta.push(`Vence: ${ds}${isLate(gEnd(r),pct)?' ⚠ VENCIDA':''}`);
-      if(pctN!==null&&!isDone)meta.push(`Avance: ${pctN}%`);
-      meta.push(gBucket(r));
-      if(meta.length)txt+=`  → ${meta.join(' | ')}\n`;
+      if(pctN!==null&&!isDone&&pctN>0)meta.push(`${pctN}%`);
+      if(ds&&!isDone)meta.push(late?`venció ${ds}`:`vence ${ds}`);
+      if(meta.length)line+=` _(${meta.join(' · ')})_`;
+      txt+=line+'\n';
     });
+    txt+='\n';
   });
+
+  if(!hasContent){toast('Sin tareas marcadas como Week esta semana');return;}
 
   const lateAll=Object.entries(AREAS).flatMap(([k,a])=>(a.rows||[]).filter(r=>isLate(gEnd(r),gPct(r))).map(r=>({r,area:a})));
   if(lateAll.length){
-    txt+=`\n⚠️  REQUIEREN ATENCIÓN INMEDIATA\n${'─'.repeat(40)}\n`;
+    txt+=`⚠️ *Requieren atención*\n`;
     lateAll.forEach(({r,area})=>{
-      txt+=`🔴 ${gName(r)}\n   ${area.name} · Venció: ${fDate(gEnd(r))||'—'} · ${gAssign(r)||'Sin asignar'}\n`;
+      txt+=`🔴 ${gName(r)} — ${area.name}, venció ${fDate(gEnd(r))||'—'}\n`;
     });
+    txt+='\n';
   }
 
-  navigator.clipboard.writeText(txt).then(()=>toast('Texto copiado al portapapeles')).catch(()=>toast('Error al copiar'));
+  txt+=`_Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}_`;
+
+  navigator.clipboard.writeText(txt).then(()=>toast('✅ Copiado — listo para pegar en Telegram/WhatsApp')).catch(()=>toast('Error al copiar'));
 }
 </script>
 
