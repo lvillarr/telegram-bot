@@ -867,16 +867,17 @@ function copySummary(){
       else{pend.push(r);gP++;}
     });
 
-    const mkMeta=(pctN,ds,vencio)=>{
+    const mkMeta=(r,pctN,ds,vencio)=>{
       const m=[];
+      gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week').forEach(l=>m.push(l));
       if(pctN!==null&&pctN>0)m.push(pctN+'%');
       if(ds)m.push((vencio?'venció ':'vence ')+ds);
       return m.length?' _('+m.join(' · ')+')_':'';
     };
 
     let block=`*${area.icon} ${area.name}*\n`;
-    ip.forEach(({r,pctN,ds})=>{ block+=`🔵 ${gName(r)}${mkMeta(pctN,ds,false)}\n`; });
-    late.forEach(({r,pctN,ds})=>{ block+=`🔴 ${gName(r)}${mkMeta(pctN,ds,true)}\n`; });
+    ip.forEach(({r,pctN,ds})=>{ block+=`🔵 ${gName(r)}${mkMeta(r,pctN,ds,false)}\n`; });
+    late.forEach(({r,pctN,ds})=>{ block+=`🔴 ${gName(r)}${mkMeta(r,pctN,ds,true)}\n`; });
 
     const sum=[];
     if(done.length)sum.push(`✅ ${done.length} completada${done.length!==1?'s':''}`);
