@@ -758,7 +758,7 @@ document.getElementById('hdr-date').textContent=d.toLocaleDateString('es-CL',{da
 
 // ── WEEKLY SUMMARY ─────────────────────────────────────
 function isWeekTask(r){
-  return gWeek(r)||gLabels(r).split(';').map(s=>s.trim()).includes('Week');
+  return gWeek(r)||gLabels(r).split(';').map(s=>s.trim().toLowerCase()).includes('week');
 }
 
 function openWeeklySummary(){

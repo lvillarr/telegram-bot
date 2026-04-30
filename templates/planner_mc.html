@@ -1073,7 +1073,7 @@ refreshAll();
 // WEEKLY SUMMARY (OneNote style)
 // ═══════════════════════════════════════════════════════════
 function isWeekTask(r){
-  return gWeek(r) || gLabels(r).split(';').map(s=>s.trim()).includes('Week');
+  return gWeek(r) || gLabels(r).split(';').map(s=>s.trim().toLowerCase()).includes('week');
 }
 
 function openWeeklySummary(){
