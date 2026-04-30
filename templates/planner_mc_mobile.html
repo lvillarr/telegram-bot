@@ -846,53 +846,55 @@ function copySummary(){
 
   const aOrder=['eo','td','ai','id','im'];
   let gD=0,gI=0,gP=0,gL=0;
-  const blocks=[];
 
+  const allTasks=[];
   aOrder.forEach(key=>{
     const area=AREAS[key];
     if(!area.rows)return;
-    const tasks=area.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)');
-    if(!tasks.length)return;
-
-    const late=[],ip=[],done=[],pend=[];
-    tasks.forEach(r=>{
+    area.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)').forEach(r=>{
       const pct=gPct(r);
       const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
       const isDone=pct===1||pct===100;
       const isL=isLate(gEnd(r),pct);
       const ds=fDate(gEnd(r));
-      if(isDone){done.push(r);gD++;}
-      else if(isL){late.push({r,pctN,ds});gL++;}
-      else if(pctN>0){ip.push({r,pctN,ds});gI++;}
-      else{pend.push(r);gP++;}
+      const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
+      const otherLabels=gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
+      let status;
+      if(isDone){status='done';gD++;}
+      else if(isL){status='late';gL++;}
+      else if(pctN!==null&&pctN>0){status='ip';gI++;}
+      else{status='pend';gP++;}
+      allTasks.push({r,ds,assign,status,otherLabels,areaName:area.name});
     });
-
-    const mkMeta=(r,pctN,ds,vencio)=>{
-      const m=[];
-      gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week').forEach(l=>m.push(l));
-      if(pctN!==null&&pctN>0)m.push(pctN+'%');
-      if(ds)m.push((vencio?'venció ':'vence ')+ds);
-      return m.length?' _('+m.join(' · ')+')_':'';
-    };
-
-    let block=`*${area.icon} ${area.name}*\n`;
-    ip.forEach(({r,pctN,ds})=>{ block+=`🔵 ${gName(r)}${mkMeta(r,pctN,ds,false)}\n`; });
-    late.forEach(({r,pctN,ds})=>{ block+=`🔴 ${gName(r)}${mkMeta(r,pctN,ds,true)}\n`; });
-
-    const sum=[];
-    if(done.length)sum.push(`✅ ${done.length} completada${done.length!==1?'s':''}`);
-    if(pend.length)sum.push(`⬜ ${pend.length} pendiente${pend.length!==1?'s':''}`);
-    if(sum.length)block+=`_${sum.join(' · ')}_\n`;
-
-    blocks.push(block);
   });
 
-  if(!blocks.length){toast('Sin tareas marcadas como Week esta semana');return;}
+  if(!allTasks.length){toast('Sin tareas marcadas como Week esta semana');return;}
+
+  const groups=new Map();
+  allTasks.forEach(task=>{
+    const lbls=task.otherLabels.length?task.otherLabels:[task.areaName];
+    lbls.forEach(lbl=>{
+      if(!groups.has(lbl))groups.set(lbl,[]);
+      groups.get(lbl).push(task);
+    });
+  });
 
   let txt=`📋 *Resumen Semana ${fmt(ws)} – ${fmt(we)}*\n`;
   txt+=`✅ ${gD} · 🔵 ${gI} · ⬜ ${gP} · 🔴 ${gL}\n\n`;
-  txt+=blocks.join('\n');
-  txt+=`\n_Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}_`;
+
+  groups.forEach((tasks,lbl)=>{
+    txt+=`*${lbl}*\n`;
+    tasks.forEach(({r,ds,assign,status})=>{
+      const icon=status==='done'?'✅':status==='late'?'🔴':status==='ip'?'🔵':'⬜';
+      let line=`${icon} ${gName(r)}`;
+      if(ds)line+=` · ${status==='late'?'Venció':'Vence'}: ${ds}`;
+      if(assign)line+=` · ${assign}`;
+      txt+=line+'\n';
+    });
+    txt+='\n';
+  });
+
+  txt+=`_Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}_`;
 
   navigator.clipboard.writeText(txt).then(()=>toast('✅ Copiado — listo para pegar')).catch(()=>toast('Error al copiar'));
 }
