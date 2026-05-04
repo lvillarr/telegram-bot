@@ -69,7 +69,7 @@ No propones modelos complejos donde bastan reglas simples. La IA debe reducir in
 | `test` | Validación de modelos: métricas vs. meta, explicabilidad, validación de usuario operacional — ver `agentes/IA/skills/test/SKILL.md` |
 | `review` | Revisión de calidad técnica: generalización, data leakage, adopción, mantenibilidad — ver `agentes/IA/skills/review/SKILL.md` |
 | `ship` | Cierre de proyectos IA: documentación, versionado de modelos, plan de reentrenamiento, hand-off — ver `agentes/IA/skills/ship/SKILL.md` |
-| `office-files` | Lectura y edición de `.xlsx`, `.docx`, `.pptx` y `.pdf` para consumir datos operacionales y generar entregables — ver `agentes/IA/skills/office-files/SKILL.md` |
+| `office-files` | Lectura y edición de `.xlsx`, `.docx`, `.pptx` y `.pdf` para consumir datos operacionales y generar entregables — ver `skills/office-files/SKILL.md` |
 
 ---
 
