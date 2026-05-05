@@ -128,21 +128,27 @@ async def web_api_chat(request: Request):
     history    = body.get("history", [])
     model      = body.get("model", "claude-haiku-4-5-20251001")
     session_id = body.get("session_id", "web-anon")
-    file_data  = body.get("file")  # {type, filename, data|content, media_type}
+    file_data  = body.get("file")   # legacy single file
+    files_data = body.get("files", [])
+    if file_data and not files_data:
+        files_data = [file_data]
 
     async def generate():
         msgs = list(history[-10:])
 
-        if file_data and file_data.get("type") == "image":
-            user_content = [
-                {"type": "image", "source": {"type": "base64",
-                 "media_type": file_data["media_type"], "data": file_data["data"]}},
-                {"type": "text", "text": message or "Analiza esta imagen."},
-            ]
-        elif file_data and file_data.get("type") == "text":
-            fname = file_data.get("filename", "archivo")
-            ctx   = f"\n\n[ARCHIVO ADJUNTO: {fname}]\n{file_data['content']}\n[FIN ARCHIVO]"
-            user_content = (message or "Analiza el archivo adjunto.") + ctx
+        if files_data:
+            blocks = []
+            for fd in files_data:
+                if fd.get("type") == "image":
+                    blocks.append({"type": "image", "source": {
+                        "type": "base64", "media_type": fd["media_type"], "data": fd["data"]}})
+                elif fd.get("type") == "text":
+                    fname = fd.get("filename", "archivo")
+                    blocks.append({"type": "text",
+                                   "text": f"[ARCHIVO: {fname}]\n{fd['content']}\n[FIN ARCHIVO]"})
+            blocks.append({"type": "text",
+                           "text": message or "Analiza los archivos adjuntos."})
+            user_content = blocks
         else:
             user_content = message
 
@@ -156,7 +162,7 @@ async def web_api_chat(request: Request):
             pass
         stream_kwargs = dict(
             model=model,
-            max_tokens=2048,
+            max_tokens=8192,
             system=_cached_system(SYSTEM_PROMPT + rag_ctx),
             messages=msgs,
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},

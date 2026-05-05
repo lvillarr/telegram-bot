@@ -253,7 +253,7 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
         </div>
         <div id="cmdList"></div>
       </div>
-      <input type="file" id="fileInput" style="display:none"
+      <input type="file" id="fileInput" style="display:none" multiple
         accept="image/*,.pdf,.xlsx,.xls,.docx,.pptx,.txt,.md,.csv,.json"
         onchange="handleFileSelect(this)">
       <div class="input-box">
@@ -268,11 +268,7 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
           <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
         </button>
       </div>
-      <div class="file-chip" id="fileChip" style="display:none">
-        <span id="fileChipIcon">📎</span>
-        <span class="file-chip-name" id="fileChipName"></span>
-        <button class="file-chip-remove" onclick="clearAttachment()" title="Quitar archivo">✕</button>
-      </div>
+      <div id="fileChipsContainer" style="display:flex;flex-wrap:wrap;gap:4px;padding:0 8px 4px;min-height:0"></div>
     </div>
   </div>
 </div>
@@ -315,49 +311,62 @@ const SESSION_ID = (() => {
 
 // ── Adjuntos ────────────────────────────────────────────────────────────────
 
-let attachedFile = null; // {type, filename, data|content, media_type}
+let attachedFiles = []; // [{type, filename, data|content, media_type}, ...]
+
+function _renderChips(){
+  const container = document.getElementById('fileChipsContainer');
+  container.innerHTML = '';
+  attachedFiles.forEach((f, i) => {
+    const chip = document.createElement('div');
+    chip.className = 'file-chip';
+    chip.style.display = 'flex';
+    chip.innerHTML = `<span>${f.type === 'image' ? '🖼️' : '📄'}</span>
+      <span class="file-chip-name">${f.filename}</span>
+      <button class="file-chip-remove" onclick="clearAttachment(${i})" title="Quitar">✕</button>`;
+    container.appendChild(chip);
+  });
+  document.getElementById('attachBtn').classList.toggle('has-file', attachedFiles.length > 0);
+}
 
 async function handleFileSelect(input){
-  const file = input.files[0];
-  if(!file) return;
+  const files = Array.from(input.files);
+  if(!files.length) return;
   input.value = '';
 
-  const chip    = document.getElementById('fileChip');
-  const chipName = document.getElementById('fileChipName');
-  const chipIcon = document.getElementById('fileChipIcon');
-  const btn     = document.getElementById('attachBtn');
+  for(const file of files){
+    // placeholder chip
+    const idx = attachedFiles.length;
+    attachedFiles.push({type:'text', filename: file.name, content:'', _uploading:true});
+    _renderChips();
 
-  chipName.textContent = file.name;
-  chipIcon.textContent = '⏳';
-  chip.style.display = 'flex';
-  chip.classList.add('file-uploading');
-  btn.classList.add('has-file');
-
-  try {
-    const fd = new FormData();
-    fd.append('file', file);
-    const resp = await fetch('/api/upload', {method:'POST', body: fd});
-    const data = await resp.json();
-    if(data.error){
-      chip.style.display = 'none';
-      btn.classList.remove('has-file');
-      alert('Error procesando archivo: ' + data.error);
-      return;
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      const resp = await fetch('/api/upload', {method:'POST', body: fd});
+      const data = await resp.json();
+      if(data.error){
+        attachedFiles.splice(idx, 1);
+        _renderChips();
+        alert('Error procesando ' + file.name + ': ' + data.error);
+        continue;
+      }
+      attachedFiles[idx] = data;
+      _renderChips();
+    } catch(e){
+      attachedFiles.splice(idx, 1);
+      _renderChips();
+      alert('Error subiendo ' + file.name + ': ' + e.message);
     }
-    attachedFile = data;
-    chipIcon.textContent = data.type === 'image' ? '🖼️' : '📄';
-    chip.classList.remove('file-uploading');
-  } catch(e){
-    chip.style.display = 'none';
-    btn.classList.remove('has-file');
-    alert('Error subiendo archivo: ' + e.message);
   }
 }
 
-function clearAttachment(){
-  attachedFile = null;
-  document.getElementById('fileChip').style.display = 'none';
-  document.getElementById('attachBtn').classList.remove('has-file');
+function clearAttachment(idx){
+  if(idx === undefined){
+    attachedFiles = [];
+  } else {
+    attachedFiles.splice(idx, 1);
+  }
+  _renderChips();
 }
 
 // ── Historial local (localStorage) ──────────────────────────────────────────
@@ -897,7 +906,7 @@ async function send(){
   closePalette();
   document.getElementById('art-bar')?.remove();
 
-  const sentFile = attachedFile;
+  const sentFiles = attachedFiles.filter(f => !f._uploading);
   clearAttachment();
 
   // Notas mode intercept
@@ -918,7 +927,7 @@ async function send(){
     return;
   }
 
-  appendUser(text, sentFile);
+  appendUser(text, sentFiles[0] || null);
   appendTyping();
 
   const msgTs = now();
@@ -943,7 +952,7 @@ async function send(){
         history: history.slice(0,-1),
         model: model,
         session_id: SESSION_ID,
-        file: sentFile || undefined
+        files: sentFiles.length ? sentFiles : undefined
       })
     });
 
