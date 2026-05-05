@@ -19,7 +19,7 @@ import openpyxl
 import pdfplumber
 from collections import OrderedDict
 import uvicorn
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, UploadFile, File
 from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from docx import Document as DocxDocument
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters, PicklePersistence
@@ -126,12 +126,27 @@ async def web_api_chat(request: Request):
     body = await request.json()
     message    = body.get("message", "")
     history    = body.get("history", [])
-    model      = body.get("model", "claude-sonnet-4-6")
+    model      = body.get("model", "claude-haiku-4-5-20251001")
     session_id = body.get("session_id", "web-anon")
+    file_data  = body.get("file")  # {type, filename, data|content, media_type}
 
     async def generate():
-        msgs = list(history[-10:])  # cap context at 10 msgs to reduce TTFT
-        msgs.append({"role": "user", "content": message})
+        msgs = list(history[-10:])
+
+        if file_data and file_data.get("type") == "image":
+            user_content = [
+                {"type": "image", "source": {"type": "base64",
+                 "media_type": file_data["media_type"], "data": file_data["data"]}},
+                {"type": "text", "text": message or "Analiza esta imagen."},
+            ]
+        elif file_data and file_data.get("type") == "text":
+            fname = file_data.get("filename", "archivo")
+            ctx   = f"\n\n[ARCHIVO ADJUNTO: {fname}]\n{file_data['content']}\n[FIN ARCHIVO]"
+            user_content = (message or "Analiza el archivo adjunto.") + ctx
+        else:
+            user_content = message
+
+        msgs.append({"role": "user", "content": user_content})
         full_text = ""
         stream_kwargs = dict(
             model=model,
@@ -337,6 +352,83 @@ async def web_history():
     loop = asyncio.get_event_loop()
     rows = await loop.run_in_executor(None, _db_history, 80)
     return {"messages": rows}
+
+
+@_web_app.post("/api/upload")
+async def web_upload(file: UploadFile = File(...)):
+    content  = await file.read()
+    filename = file.filename or "archivo"
+    mime     = file.content_type or ""
+    ext      = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+
+    # ── Imágenes → base64 para Claude vision ──────────────────────────────
+    if mime.startswith("image/") or ext in ("jpg","jpeg","png","gif","webp"):
+        if len(content) > 5 * 1024 * 1024:
+            return {"error": "Imagen demasiado grande (máx 5 MB)"}
+        media_type = mime if mime.startswith("image/") else f"image/{ext}"
+        return {"type": "image", "media_type": media_type,
+                "data": base64.standard_b64encode(content).decode(), "filename": filename}
+
+    # ── PDF → texto con pdfplumber ─────────────────────────────────────────
+    if mime == "application/pdf" or ext == "pdf":
+        try:
+            text = ""
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                for page in pdf.pages[:20]:
+                    text += (page.extract_text() or "") + "\n"
+            return {"type": "text", "content": text[:14000], "filename": filename}
+        except Exception as e:
+            return {"error": f"PDF: {e}"}
+
+    # ── Excel → tabla de texto ─────────────────────────────────────────────
+    if ext in ("xlsx", "xls"):
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+            lines = []
+            for ws in wb.worksheets[:5]:
+                lines.append(f"=== Hoja: {ws.title} ===")
+                for row in ws.iter_rows(max_row=300, values_only=True):
+                    if any(c is not None for c in row):
+                        lines.append("\t".join("" if c is None else str(c) for c in row))
+            return {"type": "text", "content": "\n".join(lines)[:14000], "filename": filename}
+        except Exception as e:
+            return {"error": f"Excel: {e}"}
+
+    # ── Word ───────────────────────────────────────────────────────────────
+    if ext == "docx":
+        try:
+            from docx import Document as _Docx
+            doc  = _Docx(io.BytesIO(content))
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            return {"type": "text", "content": text[:14000], "filename": filename}
+        except Exception as e:
+            return {"error": f"Word: {e}"}
+
+    # ── PowerPoint ─────────────────────────────────────────────────────────
+    if ext == "pptx":
+        try:
+            from pptx import Presentation as _Pptx
+            prs   = _Pptx(io.BytesIO(content))
+            lines = []
+            for i, slide in enumerate(prs.slides):
+                lines.append(f"=== Diapositiva {i+1} ===")
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text.strip():
+                        lines.append(shape.text)
+            return {"type": "text", "content": "\n".join(lines)[:14000], "filename": filename}
+        except Exception as e:
+            return {"error": f"PPT: {e}"}
+
+    # ── Texto plano ────────────────────────────────────────────────────────
+    if mime.startswith("text/") or ext in ("txt", "md", "csv", "json"):
+        try:
+            return {"type": "text", "content": content.decode("utf-8", errors="replace")[:14000],
+                    "filename": filename}
+        except Exception as e:
+            return {"error": str(e)}
+
+    return {"error": f"Tipo no soportado: {mime or ext}"}
 
 
 def fmt(text: str) -> str:

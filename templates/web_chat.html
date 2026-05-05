@@ -84,6 +84,14 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .input-box textarea::placeholder{color:#bbb}
 .slash-btn{width:28px;height:28px;background:transparent;border:1.5px solid #DFD1A7;border-radius:6px;cursor:pointer;color:#696158;font-size:.85rem;font-weight:700;font-family:'Lato',sans-serif;flex-shrink:0;transition:all .12s;align-self:flex-end}
 .slash-btn:hover,.slash-btn.active{background:#696158;color:#fff;border-color:#696158}
+.attach-btn{width:28px;height:28px;background:transparent;border:1.5px solid #DFD1A7;border-radius:6px;cursor:pointer;color:#696158;font-size:.85rem;font-family:'Lato',sans-serif;flex-shrink:0;transition:all .12s;align-self:flex-end;display:flex;align-items:center;justify-content:center}
+.attach-btn:hover{background:#696158;color:#fff;border-color:#696158}
+.attach-btn.has-file{background:#BFB800;color:#fff;border-color:#BFB800}
+.file-chip{display:flex;align-items:center;gap:6px;margin-top:7px;background:#f5f2ee;border:1px solid #DFD1A7;border-radius:8px;padding:5px 10px;font-size:.75rem;color:#555;width:fit-content;max-width:100%}
+.file-chip-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:280px}
+.file-chip-remove{background:none;border:none;cursor:pointer;color:#aaa;font-size:.8rem;padding:0 2px;line-height:1}
+.file-chip-remove:hover{color:#c00}
+.file-uploading{opacity:.6;font-style:italic}
 .send-btn{width:34px;height:34px;background:#696158;border:none;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
 .send-btn:hover:not(:disabled){background:#BFB800}
 .send-btn:disabled{opacity:.4;cursor:default}
@@ -200,8 +208,12 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
         </div>
         <div id="cmdList"></div>
       </div>
+      <input type="file" id="fileInput" style="display:none"
+        accept="image/*,.pdf,.xlsx,.xls,.docx,.pptx,.txt,.md,.csv,.json"
+        onchange="handleFileSelect(this)">
       <div class="input-box">
         <button class="slash-btn" id="slashBtn" onclick="togglePalette()" title="Comandos">/</button>
+        <button class="attach-btn" id="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar archivo">📎</button>
         <textarea id="input" placeholder="Escribe o usa / para comandos..."
           rows="1"
           onkeydown="inputKeydown(event)"
@@ -209,6 +221,11 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
         <button class="send-btn" id="sendBtn" onclick="send()">
           <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
         </button>
+      </div>
+      <div class="file-chip" id="fileChip" style="display:none">
+        <span id="fileChipIcon">📎</span>
+        <span class="file-chip-name" id="fileChipName"></span>
+        <button class="file-chip-remove" onclick="clearAttachment()" title="Quitar archivo">✕</button>
       </div>
     </div>
   </div>
@@ -229,6 +246,53 @@ const SESSION_ID = (() => {
   if(!id){ id = 'web-' + crypto.randomUUID(); localStorage.setItem('mc_session_id', id); }
   return id;
 })();
+
+// ── Adjuntos ────────────────────────────────────────────────────────────────
+
+let attachedFile = null; // {type, filename, data|content, media_type}
+
+async function handleFileSelect(input){
+  const file = input.files[0];
+  if(!file) return;
+  input.value = '';
+
+  const chip    = document.getElementById('fileChip');
+  const chipName = document.getElementById('fileChipName');
+  const chipIcon = document.getElementById('fileChipIcon');
+  const btn     = document.getElementById('attachBtn');
+
+  chipName.textContent = file.name;
+  chipIcon.textContent = '⏳';
+  chip.style.display = 'flex';
+  chip.classList.add('file-uploading');
+  btn.classList.add('has-file');
+
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const resp = await fetch('/api/upload', {method:'POST', body: fd});
+    const data = await resp.json();
+    if(data.error){
+      chip.style.display = 'none';
+      btn.classList.remove('has-file');
+      alert('Error procesando archivo: ' + data.error);
+      return;
+    }
+    attachedFile = data;
+    chipIcon.textContent = data.type === 'image' ? '🖼️' : '📄';
+    chip.classList.remove('file-uploading');
+  } catch(e){
+    chip.style.display = 'none';
+    btn.classList.remove('has-file');
+    alert('Error subiendo archivo: ' + e.message);
+  }
+}
+
+function clearAttachment(){
+  attachedFile = null;
+  document.getElementById('fileChip').style.display = 'none';
+  document.getElementById('attachBtn').classList.remove('has-file');
+}
 
 // ── Historial local (localStorage) ──────────────────────────────────────────
 
@@ -667,18 +731,32 @@ async function genArtifact(type, btn){
   });
 }
 
-function appendUser(text){
-  const empty = document.getElementById('emptyState');
-  if(empty) empty.remove();
-
+function appendUser(text, file){
+  document.getElementById('emptyState')?.remove();
   const msgs = document.getElementById('messages');
   const d = document.createElement('div');
   d.className = 'msg user';
+
+  let fileHtml = '';
+  if(file){
+    if(file.type === 'image'){
+      fileHtml = `<img src="data:${file.media_type};base64,${file.data}"
+        style="max-width:220px;max-height:160px;border-radius:6px;display:block;margin-bottom:6px">`;
+    } else {
+      const icon = file.filename?.endsWith('.pdf') ? '📄' :
+                   file.filename?.match(/\.xlsx?/) ? '📊' :
+                   file.filename?.endsWith('.docx') ? '📝' :
+                   file.filename?.endsWith('.pptx') ? '🖥️' : '📎';
+      fileHtml = `<div style="font-size:.72rem;background:rgba(255,255,255,.15);padding:3px 8px;border-radius:6px;margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:200px">${icon} ${(file.filename||'').replace(/</g,'&lt;')}</div>`;
+    }
+  }
+
+  const safeText = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
   d.innerHTML = `
     <div class="avatar av-user">LV</div>
     <div class="msg-body">
       <div class="msg-meta">Luciano · ${now()}</div>
-      <div class="bubble">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>
+      <div class="bubble">${fileHtml}${safeText}</div>
     </div>`;
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
@@ -749,12 +827,12 @@ async function send(){
   streaming = true;
 
   closePalette();
-  // Remove previous art-bar when user sends new message
-  const oldBar = document.getElementById('art-bar');
-  if(oldBar) oldBar.remove();
+  document.getElementById('art-bar')?.remove();
 
-  appendUser(text);
+  appendUser(text, attachedFile);
   appendTyping();
+  const sentFile = attachedFile;
+  clearAttachment();
 
   const msgTs = now();
   history.push({role:'user', content:text});
@@ -777,7 +855,8 @@ async function send(){
         message: text,
         history: history.slice(0,-1),
         model: model,
-        session_id: SESSION_ID
+        session_id: SESSION_ID,
+        file: attachedFile || undefined
       })
     });
 
