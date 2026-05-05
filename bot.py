@@ -148,10 +148,16 @@ async def web_api_chat(request: Request):
 
         msgs.append({"role": "user", "content": user_content})
         full_text = ""
+        rag_ctx = ""
+        try:
+            if rag.col and rag.col.count() > 0:
+                rag_ctx = rag.build_context(message)
+        except Exception:
+            pass
         stream_kwargs = dict(
             model=model,
             max_tokens=2048,
-            system=_cached_system(SYSTEM_PROMPT),
+            system=_cached_system(SYSTEM_PROMPT + rag_ctx),
             messages=msgs,
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
@@ -209,7 +215,8 @@ async def web_api_artifact(request: Request):
     ai_msgs   = [m["content"] for m in history if m["role"] == "assistant"][-3:]
     for u, a in zip(user_msgs, ai_msgs):
         pairs.append(f"Usuario: {u}\nAsistente: {a[:600]}")
-    description = "\n\n".join(pairs) or "Genera un artefacto basado en la conversación."
+    description = body.get("description_override") or \
+                  "\n\n".join(pairs) or "Genera un artefacto basado en la conversación."
 
     _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
 
@@ -228,7 +235,7 @@ async def web_api_artifact(request: Request):
             return {"result_type": "url", "url": url}
 
         # ARTIFACT_PROMPTS defined later in module — resolved lazily at call time
-        if art_type not in ARTIFACT_PROMPTS or art_type == "notas_onenote":
+        if art_type not in ARTIFACT_PROMPTS:
             return {"error": f"Tipo no soportado: {art_type}"}
 
         prompt = ARTIFACT_PROMPTS[art_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
@@ -281,6 +288,16 @@ async def web_api_artifact(request: Request):
         elif art_type == "email":
             data = extract_json(raw)
             return {"result_type": "email", "data": data}
+
+        elif art_type == "notas_onenote":
+            html = raw.strip()
+            if html.startswith("```"):
+                html = html.split("\n", 1)[-1]
+            if html.endswith("```"):
+                html = html.rsplit("```", 1)[0]
+            html = html.strip()
+            url = store_html(html)
+            return {"result_type": "url", "url": url}
 
         else:
             return {"error": f"Tipo no implementado: {art_type}"}
@@ -352,6 +369,78 @@ async def web_history():
     loop = asyncio.get_event_loop()
     rows = await loop.run_in_executor(None, _db_history, 80)
     return {"messages": rows}
+
+
+@_web_app.post("/api/send-email")
+async def web_send_email(request: Request):
+    body = await request.json()
+    data = body.get("data", {})
+    loop = asyncio.get_event_loop()
+    try:
+        await loop.run_in_executor(None, send_email_outlook, data)
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_web_app.get("/api/rag/docs")
+async def web_rag_docs():
+    loop = asyncio.get_event_loop()
+    docs  = await loop.run_in_executor(None, rag.list_documents)
+    total = rag.col.count() if rag.col else 0
+    return {"documents": docs, "total_chunks": total}
+
+
+@_web_app.post("/api/rag/query")
+async def web_rag_query(request: Request):
+    body     = await request.json()
+    question = body.get("question", "")
+    loop     = asyncio.get_event_loop()
+    chunks   = await loop.run_in_executor(None, rag.query, question)
+    return {"chunks": chunks}
+
+
+@_web_app.post("/api/rag/index")
+async def web_rag_index(file: UploadFile = File(...)):
+    content  = await file.read()
+    filename = file.filename or "documento"
+    ext      = filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+    text     = ""
+    try:
+        if ext == "pdf":
+            with pdfplumber.open(io.BytesIO(content)) as pdf:
+                for page in pdf.pages[:30]:
+                    text += (page.extract_text() or "") + "\n"
+        elif ext in ("xlsx", "xls"):
+            wb = openpyxl.load_workbook(io.BytesIO(content), data_only=True)
+            lines = []
+            for ws in wb.worksheets:
+                lines.append(f"=== {ws.title} ===")
+                for row in ws.iter_rows(max_row=500, values_only=True):
+                    if any(c is not None for c in row):
+                        lines.append("\t".join("" if c is None else str(c) for c in row))
+            text = "\n".join(lines)
+        elif ext == "docx":
+            from docx import Document as _Docx
+            doc  = _Docx(io.BytesIO(content))
+            text = "\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        elif ext == "pptx":
+            from pptx import Presentation as _Pptx
+            prs = _Pptx(io.BytesIO(content))
+            for slide in prs.slides:
+                for shape in slide.shapes:
+                    if hasattr(shape, "text") and shape.text.strip():
+                        text += shape.text + "\n"
+        else:
+            text = content.decode("utf-8", errors="replace")
+        if not text.strip():
+            return {"error": "No se pudo extraer texto del archivo"}
+        loop     = asyncio.get_event_loop()
+        n_chunks = await loop.run_in_executor(None, rag.index_document, text, filename)
+        total    = rag.col.count() if rag.col else 0
+        return {"ok": True, "filename": filename, "chunks": n_chunks, "total": total}
+    except Exception as e:
+        return {"error": str(e)}
 
 
 @_web_app.post("/api/upload")

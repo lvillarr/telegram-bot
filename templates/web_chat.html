@@ -137,6 +137,43 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .email-actions{padding:8px 14px;display:flex;gap:8px;flex-wrap:wrap}
 .email-action-btn{font-size:.72rem;padding:4px 12px;border-radius:14px;border:1.5px solid #e0dbd4;background:#f5f2ee;cursor:pointer;color:#555;font-family:'Lato',sans-serif;text-decoration:none;display:inline-block;transition:all .12s}
 .email-action-btn:hover{background:#696158;color:#fff;border-color:#696158}
+
+/* Notas */
+.notas-bar{display:none;align-items:center;gap:8px;padding:7px 12px;background:#fffbea;border-top:1.5px solid #DFD1A7;flex-wrap:wrap;flex-shrink:0}
+.notas-bar-label{font-size:.72rem;font-weight:700;color:#696158}
+.notas-bar-count{font-size:.72rem;color:#999;background:#f5f2ee;padding:2px 8px;border-radius:10px}
+.notas-bar-btn{font-size:.72rem;padding:3px 10px;border-radius:14px;border:1.5px solid #DFD1A7;background:#fff;cursor:pointer;color:#555;font-family:'Lato',sans-serif;transition:all .12s}
+.notas-bar-btn:hover{background:#696158;color:#fff;border-color:#696158}
+.notas-bar-btn.danger:hover{background:#c00;border-color:#c00}
+.nota-card{margin-left:46px;background:#fffbea;border:1.5px solid #DFD1A7;border-radius:10px;padding:10px 14px;max-width:720px;animation:fadein .15s ease}
+.nota-num{font-size:.62rem;font-weight:900;color:#BFB800;text-transform:uppercase;letter-spacing:.06em;margin-bottom:3px}
+.nota-text{font-size:.84rem;color:#333;line-height:1.6;white-space:pre-wrap}
+.nota-fecha{font-size:.62rem;color:#bbb;margin-top:4px}
+.notas-btn{width:28px;height:28px;background:transparent;border:1.5px solid #DFD1A7;border-radius:6px;cursor:pointer;font-size:.8rem;flex-shrink:0;transition:all .12s;align-self:flex-end;display:flex;align-items:center;justify-content:center}
+.notas-btn:hover,.notas-btn.active{background:#BFB800;color:#fff;border-color:#BFB800}
+
+/* RAG panel */
+.rag-panel{position:fixed;top:54px;right:0;bottom:0;width:340px;background:#fff;border-left:1.5px solid #e0dbd4;display:flex;flex-direction:column;z-index:200;transform:translateX(100%);transition:transform .2s ease;box-shadow:-4px 0 20px rgba(0,0,0,.08)}
+.rag-panel.open{transform:none}
+.rag-panel-header{padding:12px 16px;border-bottom:1px solid #f0ede9;display:flex;align-items:center;justify-content:space-between;background:#696158;color:#fff}
+.rag-panel-title{font-size:.88rem;font-weight:700}
+.rag-close-btn{background:none;border:none;color:#fff;cursor:pointer;font-size:1rem;padding:0 4px}
+.rag-section-label{padding:8px 14px 4px;font-size:.6rem;font-weight:900;color:#BFB800;text-transform:uppercase;letter-spacing:.06em}
+.rag-doc-item{padding:6px 14px;font-size:.76rem;color:#555;border-bottom:1px solid #f5f2ee;display:flex;align-items:center;gap:6px}
+.rag-doc-item span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rag-empty{padding:12px 14px;font-size:.76rem;color:#bbb;text-align:center}
+.rag-search-box{padding:10px 14px;border-top:1px solid #f0ede9;border-bottom:1px solid #f0ede9;display:flex;gap:6px}
+.rag-search-box input{flex:1;border:1.5px solid #DFD1A7;border-radius:7px;padding:6px 10px;font-size:.8rem;font-family:'Lato',sans-serif;outline:none}
+.rag-search-box input:focus{border-color:#696158}
+.rag-search-btn{padding:6px 12px;background:#696158;color:#fff;border:none;border-radius:7px;cursor:pointer;font-size:.78rem;font-family:'Lato',sans-serif}
+.rag-results{flex:1;overflow-y:auto;padding:8px 0}
+.rag-chunk{padding:8px 14px;border-bottom:1px solid #f5f2ee}
+.rag-chunk-source{font-size:.62rem;font-weight:700;color:#BFB800;margin-bottom:3px}
+.rag-chunk-text{font-size:.76rem;color:#444;line-height:1.55}
+.rag-chunk-score{font-size:.6rem;color:#bbb;margin-top:2px}
+.rag-footer{padding:10px 14px;border-top:1px solid #f0ede9;display:flex;gap:6px}
+.rag-footer-btn{flex:1;padding:7px;border-radius:7px;border:1.5px solid #DFD1A7;background:#f5f2ee;cursor:pointer;font-size:.75rem;color:#555;font-family:'Lato',sans-serif;transition:all .12s;text-align:center}
+.rag-footer-btn:hover{background:#696158;color:#fff;border-color:#696158}
 </style>
 </head>
 <body>
@@ -200,6 +237,14 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
       </div>
     </div>
 
+    <div class="notas-bar" id="notas-bar">
+      <span class="notas-bar-label">📝 Modo notas</span>
+      <span class="notas-bar-count" id="notas-count">0 notas</span>
+      <button class="notas-bar-btn" onclick="generarNotasDoc('onenote')">📓 OneNote</button>
+      <button class="notas-bar-btn" onclick="generarNotasDoc('pdf')">📄 PDF</button>
+      <button class="notas-bar-btn danger" onclick="limpiarNotas()">🗑 Limpiar</button>
+      <button class="notas-bar-btn" onclick="toggleNotasMode()" style="margin-left:auto">✕ Salir</button>
+    </div>
     <div class="input-area">
       <div class="cmd-palette" id="cmdPalette">
         <div class="cmd-search">
@@ -214,6 +259,7 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
       <div class="input-box">
         <button class="slash-btn" id="slashBtn" onclick="togglePalette()" title="Comandos">/</button>
         <button class="attach-btn" id="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar archivo">📎</button>
+        <button class="notas-btn" id="notasBtn" onclick="toggleNotasMode()" title="Modo notas">📝</button>
         <textarea id="input" placeholder="Escribe o usa / para comandos..."
           rows="1"
           onkeydown="inputKeydown(event)"
@@ -228,6 +274,26 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
         <button class="file-chip-remove" onclick="clearAttachment()" title="Quitar archivo">✕</button>
       </div>
     </div>
+  </div>
+</div>
+
+<div class="rag-panel" id="ragPanel">
+  <div class="rag-panel-header">
+    <span class="rag-panel-title">📚 Base de conocimiento</span>
+    <button class="rag-close-btn" onclick="closeRagPanel()">✕</button>
+  </div>
+  <div class="rag-section-label">Documentos indexados</div>
+  <div id="ragDocsList"><div class="rag-empty">Cargando...</div></div>
+  <div class="rag-search-box">
+    <input id="ragQuery" placeholder="Buscar en documentos..." onkeydown="if(event.key==='Enter')searchRag()">
+    <button class="rag-search-btn" onclick="searchRag()">Buscar</button>
+  </div>
+  <div class="rag-results" id="ragResults"></div>
+  <div class="rag-footer">
+    <input type="file" id="ragFileInput" style="display:none"
+      accept=".pdf,.xlsx,.xls,.docx,.pptx,.txt,.md,.csv"
+      onchange="indexRagFile(this)">
+    <button class="rag-footer-btn" onclick="document.getElementById('ragFileInput').click()">📥 Indexar documento</button>
   </div>
 </div>
 
@@ -634,6 +700,7 @@ function showEmailDraft(d){
   const el = document.createElement('div');
   el.className = 'email-draft';
   el.id = 'email-draft';
+  el._emailData = d;
   el.innerHTML = `
     <div class="email-header">
       <div class="email-asunto">${asunto.replace(/</g,'&lt;')}</div>
@@ -646,6 +713,7 @@ function showEmailDraft(d){
         navigator.clipboard.writeText(${JSON.stringify(cuerpo)}).then(()=>this.textContent='✓ Copiado').catch(()=>{});
       ">📋 Copiar cuerpo</button>
       <a class="email-action-btn" href="${mailto}">📤 Abrir en correo</a>
+      <button class="email-action-btn" onclick="sendEmailDraft(this.closest('.email-draft')._emailData, this)">✅ Enviar</button>
       <button class="email-action-btn" style="margin-left:auto;color:#c00;border-color:#fbb" onclick="this.closest('.email-draft').remove()">✕</button>
     </div>`;
   document.getElementById('messages').appendChild(el);
@@ -829,10 +897,29 @@ async function send(){
   closePalette();
   document.getElementById('art-bar')?.remove();
 
-  appendUser(text, attachedFile);
-  appendTyping();
   const sentFile = attachedFile;
   clearAttachment();
+
+  // Notas mode intercept
+  if(notasMode){
+    addNota(text);
+    streaming = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('input').focus();
+    return;
+  }
+
+  // /notebookrag intercept
+  if(text.trim() === '/notebookrag' || text.trim().startsWith('/notebookrag ')){
+    openRagPanel();
+    streaming = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('input').focus();
+    return;
+  }
+
+  appendUser(text, sentFile);
+  appendTyping();
 
   const msgTs = now();
   history.push({role:'user', content:text});
@@ -856,7 +943,7 @@ async function send(){
         history: history.slice(0,-1),
         model: model,
         session_id: SESSION_ID,
-        file: attachedFile || undefined
+        file: sentFile || undefined
       })
     });
 
@@ -919,6 +1006,168 @@ async function send(){
   streaming = false;
   document.getElementById('sendBtn').disabled = false;
   document.getElementById('input').focus();
+}
+
+// ── Modo notas ───────────────────────────────────────────────────────────────
+
+let notasMode = false;
+let webNotas  = [];
+
+function toggleNotasMode(){
+  notasMode = !notasMode;
+  const bar = document.getElementById('notas-bar');
+  const btn = document.getElementById('notasBtn');
+  const ta  = document.getElementById('input');
+  bar.style.display = notasMode ? 'flex' : 'none';
+  btn.classList.toggle('active', notasMode);
+  ta.placeholder = notasMode ? 'Escribe tu nota...' : 'Escribe o usa / para comandos...';
+  if(notasMode) document.getElementById('emptyState')?.remove();
+}
+
+function addNota(text){
+  const nota = {
+    texto: text,
+    fecha: new Date().toLocaleString('es-CL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}),
+    n: webNotas.length + 1
+  };
+  webNotas.push(nota);
+  const msgs = document.getElementById('messages');
+  const d    = document.createElement('div');
+  d.className = 'nota-card';
+  d.innerHTML = `<div class="nota-num">#${nota.n}</div><div class="nota-text">${nota.texto.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div><div class="nota-fecha">${nota.fecha}</div>`;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+  document.getElementById('notas-count').textContent = `${webNotas.length} nota${webNotas.length!==1?'s':''}`;
+}
+
+async function generarNotasDoc(tipo){
+  if(!webNotas.length){ alert('No hay notas guardadas.'); return; }
+  const description = webNotas.map(n => `[${n.fecha}] Nota #${n.n}:\n${n.texto}`).join('\n\n');
+  const art_type = tipo === 'pdf' ? 'pdf' : 'notas_onenote';
+  const btn = document.querySelector(`.notas-bar-btn[onclick*="${tipo}"]`);
+  if(btn){ btn.disabled=true; btn.textContent='⏳...'; }
+  try{
+    const resp = await fetch('/api/artifact',{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({type: art_type, history:[], description_override: description})
+    });
+    const data = await resp.json();
+    if(data.error){ alert('Error: '+data.error); return; }
+    if(data.result_type==='url') window.open(data.url,'_blank');
+    else if(data.result_type==='download'){
+      const a=document.createElement('a'); a.href=data.url; a.download=data.filename; a.click();
+    }
+  }catch(e){ alert('Error: '+e.message); }
+  finally{ if(btn){ btn.disabled=false; btn.textContent = tipo==='pdf'?'📄 PDF':'📓 OneNote'; } }
+}
+
+function limpiarNotas(){
+  if(!webNotas.length) return;
+  if(!confirm(`¿Borrar las ${webNotas.length} notas?`)) return;
+  webNotas = [];
+  document.querySelectorAll('.nota-card').forEach(el=>el.remove());
+  document.getElementById('notas-count').textContent = '0 notas';
+}
+
+// ── RAG panel ────────────────────────────────────────────────────────────────
+
+async function openRagPanel(){
+  document.getElementById('ragPanel').classList.add('open');
+  await loadRagDocs();
+}
+
+function closeRagPanel(){
+  document.getElementById('ragPanel').classList.remove('open');
+}
+
+async function loadRagDocs(){
+  const list = document.getElementById('ragDocsList');
+  list.innerHTML = '<div class="rag-empty">Cargando...</div>';
+  try{
+    const resp = await fetch('/api/rag/docs');
+    const data = await resp.json();
+    const docs  = data.documents || [];
+    const total = data.total_chunks || 0;
+    if(!docs.length){
+      list.innerHTML = '<div class="rag-empty">Sin documentos indexados.<br>Sube uno con "📥 Indexar documento".</div>';
+      return;
+    }
+    list.innerHTML = `<div class="rag-section-label">${docs.length} doc${docs.length!==1?'s':''} — ${total} fragmentos</div>` +
+      docs.map(d=>`<div class="rag-doc-item"><span>📄</span><span title="${d}">${d}</span></div>`).join('');
+  }catch(e){
+    list.innerHTML = '<div class="rag-empty">Error cargando documentos.</div>';
+  }
+}
+
+async function searchRag(){
+  const q = document.getElementById('ragQuery').value.trim();
+  if(!q) return;
+  const results = document.getElementById('ragResults');
+  results.innerHTML = '<div class="rag-empty">Buscando...</div>';
+  try{
+    const resp = await fetch('/api/rag/query',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({question: q})
+    });
+    const data = await resp.json();
+    const chunks = data.chunks || [];
+    if(!chunks.length){ results.innerHTML='<div class="rag-empty">Sin resultados relevantes.</div>'; return; }
+    results.innerHTML = chunks.map(c=>`
+      <div class="rag-chunk">
+        <div class="rag-chunk-source">📄 ${c.filename}</div>
+        <div class="rag-chunk-text">${c.text.replace(/</g,'&lt;').slice(0,300)}${c.text.length>300?'…':''}</div>
+        <div class="rag-chunk-score">Relevancia: ${Math.round(c.score*100)}%</div>
+      </div>`).join('');
+  }catch(e){
+    results.innerHTML='<div class="rag-empty">Error en búsqueda.</div>';
+  }
+}
+
+async function indexRagFile(input){
+  const file = input.files[0];
+  if(!file) return;
+  input.value='';
+  const btn = document.querySelector('.rag-footer-btn');
+  if(btn){ btn.disabled=true; btn.textContent='⏳ Indexando...'; }
+  try{
+    const fd = new FormData();
+    fd.append('file', file);
+    const resp = await fetch('/api/rag/index',{method:'POST', body:fd});
+    const data = await resp.json();
+    if(data.error){ alert('Error: '+data.error); return; }
+    alert(`✅ "${data.filename}" indexado — ${data.chunks} fragmentos (total: ${data.total})`);
+    await loadRagDocs();
+  }catch(e){
+    alert('Error: '+e.message);
+  }finally{
+    if(btn){ btn.disabled=false; btn.textContent='📥 Indexar documento'; }
+  }
+}
+
+// ── Email sending ─────────────────────────────────────────────────────────────
+
+async function sendEmailDraft(emailData, btn){
+  if(!confirm(`¿Enviar correo a ${emailData.para}?`)) return;
+  const origText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = '⏳ Enviando...';
+  try{
+    const resp = await fetch('/api/send-email',{
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({data: emailData})
+    });
+    const data = await resp.json();
+    if(data.error){ alert('Error al enviar: '+data.error); btn.textContent=origText; btn.disabled=false; return; }
+    btn.textContent='✅ Enviado';
+    btn.style.background='#e8f5e9';
+    btn.style.borderColor='#a5d6a7';
+    btn.style.color='#2e7d32';
+  }catch(e){
+    alert('Error de red: '+e.message);
+    btn.textContent=origText;
+    btn.disabled=false;
+  }
 }
 
 // Carga historial al abrir
