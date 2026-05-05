@@ -30,6 +30,8 @@ from telegram.ext import ContextTypes
 _HTML_STORE: OrderedDict = OrderedDict()   # uuid → html_string (máx 100 entradas)
 _MAX_STORE  = 100
 _html_lock  = threading.Lock()             # protege _HTML_STORE en acceso concurrente
+_FILE_STORE: dict  = {}                    # fid → {buf, filename, mime}
+_file_lock  = threading.Lock()             # protege _FILE_STORE
 _img_debounce: dict = {}                   # user_id → asyncio.Task
 _HTTP_PORT  = int(os.environ.get("PORT", 8080))
 PUBLIC_BASE = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
@@ -143,6 +145,106 @@ async def web_api_chat(request: Request):
         yield "data: [DONE]\n\n"
 
     return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+@_web_app.get("/api/download/{fid}")
+async def web_download(fid: str):
+    from fastapi.responses import Response as FResponse
+    if not re.fullmatch(r"[0-9a-f]{32}", fid):
+        return PlainTextResponse("ID invalido.", status_code=400)
+    with _file_lock:
+        entry = _FILE_STORE.get(fid)
+    if not entry:
+        return PlainTextResponse("No encontrado.", status_code=404)
+    return FResponse(
+        content=entry["buf"],
+        media_type=entry["mime"],
+        headers={"Content-Disposition": f'attachment; filename="{entry["filename"]}"'},
+    )
+
+
+def _store_file(buf: "io.BytesIO", filename: str, mime: str) -> str:
+    fid = uuid.uuid4().hex
+    with _file_lock:
+        _FILE_STORE[fid] = {"buf": buf.getvalue(), "filename": filename, "mime": mime}
+        if len(_FILE_STORE) > 50:
+            _FILE_STORE.pop(next(iter(_FILE_STORE)))
+    return f"/api/download/{fid}"
+
+
+@_web_app.post("/api/artifact")
+async def web_api_artifact(request: Request):
+    body = await request.json()
+    art_type = body.get("type", "")
+    history  = body.get("history", [])
+
+    # Build description from last 3 exchange pairs
+    pairs = []
+    user_msgs = [m["content"] for m in history if m["role"] == "user"][-3:]
+    ai_msgs   = [m["content"] for m in history if m["role"] == "assistant"][-3:]
+    for u, a in zip(user_msgs, ai_msgs):
+        pairs.append(f"Usuario: {u}\nAsistente: {a[:600]}")
+    description = "\n\n".join(pairs) or "Genera un artefacto basado en la conversación."
+
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
+
+    try:
+        # ARTIFACT_PROMPTS defined later in module — resolved lazily at call time
+        if art_type not in ARTIFACT_PROMPTS or art_type in ("planner", "planner_mobile", "notas_onenote"):
+            return {"error": f"Tipo no soportado: {art_type}"}
+
+        prompt = ARTIFACT_PROMPTS[art_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
+
+        loop = asyncio.get_event_loop()
+        raw = await loop.run_in_executor(
+            None,
+            lambda: claude_response(prompt, description,
+                                    max_tokens=_tokens_map.get(art_type, 4000),
+                                    model="claude-sonnet-4-6", effort="high"),
+        )
+
+        if art_type == "html":
+            html = raw.strip()
+            if html.startswith("```"):
+                html = html.split("\n", 1)[-1]
+            if html.endswith("```"):
+                html = html.rsplit("```", 1)[0]
+            html = html.strip()
+            url = store_html(html)
+            return {"result_type": "url", "url": url}
+
+        elif art_type == "gantt":
+            data = extract_json(raw)
+            url  = build_gantt(data)
+            return {"result_type": "url", "url": url}
+
+        elif art_type == "excel":
+            data = extract_json(raw)
+            buf  = build_excel(data)
+            fname = f"arauco-{data.get('titulo','datos').lower().replace(' ','-')[:30]}.xlsx"
+            dl = _store_file(buf, fname, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            return {"result_type": "download", "url": dl, "filename": fname}
+
+        elif art_type == "pdf":
+            data = extract_json(raw)
+            buf  = build_pdf(data)
+            titulo = data.get("titulo", "informe-arauco").lower().replace(" ", "-")[:30]
+            dl = _store_file(buf, f"{titulo}.pdf", "application/pdf")
+            return {"result_type": "download", "url": dl, "filename": f"{titulo}.pdf"}
+
+        elif art_type == "pptx":
+            data = extract_json(raw)
+            buf  = build_pptx(data)
+            titulo = data.get("titulo", "presentacion-arauco").lower().replace(" ", "-")[:30]
+            dl = _store_file(buf, f"{titulo}.pptx",
+                             "application/vnd.openxmlformats-officedocument.presentationml.presentation")
+            return {"result_type": "download", "url": dl, "filename": f"{titulo}.pptx"}
+
+        else:
+            return {"error": f"Tipo no implementado: {art_type}"}
+
+    except Exception as e:
+        return {"error": str(e)}
 
 
 # Arranca FastAPI/uvicorn en hilo daemon (muere cuando termina el proceso)

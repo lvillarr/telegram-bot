@@ -87,6 +87,18 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .empty-state{margin:auto;text-align:center;padding:40px 20px;max-width:420px}
 .empty-state h2{font-size:1.2rem;font-weight:900;color:#696158;margin-bottom:8px}
 .empty-state p{font-size:.85rem;color:#aaa;line-height:1.6}
+
+.art-bar{display:flex;align-items:center;gap:6px;flex-wrap:wrap;padding:8px 12px 4px 46px;animation:fadein .2s ease}
+@keyframes fadein{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+.art-label{font-size:.64rem;font-weight:700;color:#bbb;text-transform:uppercase;letter-spacing:.06em;margin-right:2px;white-space:nowrap}
+.art-btn{font-size:.72rem;padding:4px 10px;background:#fff;border:1.5px solid #e0dbd4;border-radius:16px;cursor:pointer;color:#555;font-family:'Lato',sans-serif;transition:all .12s;white-space:nowrap}
+.art-btn:hover:not(:disabled){background:#696158;color:#fff;border-color:#696158}
+.art-btn:disabled{opacity:.4;cursor:default}
+.art-btn.loading{background:#f5f2ee;color:#bbb}
+.art-result{font-size:.72rem;padding:4px 10px;border-radius:16px;background:#e8f5e9;color:#2e7d32;border:1.5px solid #a5d6a7;cursor:pointer;text-decoration:none;display:inline-block}
+.art-result:hover{background:#c8e6c9}
+.art-result.dl{background:#e3f2fd;color:#1565c0;border-color:#90caf9}
+.art-result.dl:hover{background:#bbdefb}
 </style>
 </head>
 <body>
@@ -171,6 +183,14 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 let history = [];
 let streaming = false;
 
+const ART_TYPES = [
+  {type:'html',  label:'🌐 HTML'},
+  {type:'excel', label:'📊 Excel'},
+  {type:'pdf',   label:'📄 PDF'},
+  {type:'gantt', label:'📅 Gantt'},
+  {type:'pptx',  label:'🖥️ PPT'},
+];
+
 function now(){
   return new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
 }
@@ -208,6 +228,75 @@ function renderMd(text){
     .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
     .replace(/\n{2,}/g,'</p><p>')
     .replace(/\n/g,'<br>');
+}
+
+function showArtBar(){
+  const old = document.getElementById('art-bar');
+  if(old) old.remove();
+  const bar = document.createElement('div');
+  bar.className = 'art-bar';
+  bar.id = 'art-bar';
+  bar.innerHTML = `<span class="art-label">Generar:</span>` +
+    ART_TYPES.map(a =>
+      `<button class="art-btn" id="ab-${a.type}" onclick="genArtifact('${a.type}')">${a.label}</button>`
+    ).join('');
+  document.getElementById('messages').appendChild(bar);
+  document.getElementById('messages').scrollTop = 99999;
+}
+
+async function genArtifact(type){
+  if(streaming) return;
+  const bar = document.getElementById('art-bar');
+  const btns = bar ? bar.querySelectorAll('.art-btn') : [];
+  btns.forEach(b => { b.disabled = true; b.classList.add('loading'); });
+  const activeBtn = document.getElementById('ab-' + type);
+  if(activeBtn) activeBtn.textContent = '⏳ Generando...';
+
+  try {
+    const resp = await fetch('/api/artifact', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, history})
+    });
+    const data = await resp.json();
+
+    if(data.error){
+      if(activeBtn){ activeBtn.disabled=false; activeBtn.classList.remove('loading'); activeBtn.textContent = ART_TYPES.find(a=>a.type===type)?.label || type; }
+      btns.forEach(b => { b.disabled=false; b.classList.remove('loading'); });
+      alert('Error: ' + data.error);
+      return;
+    }
+
+    if(data.result_type === 'url'){
+      window.open(data.url, '_blank');
+    } else if(data.result_type === 'download'){
+      const a = document.createElement('a');
+      a.href = data.url;
+      a.download = data.filename || 'arauco-archivo';
+      a.click();
+    }
+
+    // Show result link in bar
+    if(bar && activeBtn){
+      const isDl = data.result_type === 'download';
+      const link = document.createElement('a');
+      link.href = data.url;
+      link.className = 'art-result' + (isDl ? ' dl' : '');
+      link.textContent = isDl ? `⬇ ${data.filename}` : '🔗 Abrir';
+      if(!isDl) link.target = '_blank';
+      else { link.download = data.filename; link.addEventListener('click', e => { e.preventDefault(); const a2=document.createElement('a'); a2.href=data.url; a2.download=data.filename; a2.click(); }); }
+      activeBtn.replaceWith(link);
+    }
+
+  } catch(e){
+    alert('Error de red: ' + e.message);
+  }
+
+  // Re-enable remaining buttons
+  document.querySelectorAll('.art-btn').forEach(b => {
+    b.disabled = false;
+    b.classList.remove('loading');
+  });
 }
 
 function appendUser(text){
@@ -275,12 +364,15 @@ async function send(){
   document.getElementById('sendBtn').disabled = true;
   streaming = true;
 
+  // Remove previous art-bar when user sends new message
+  const oldBar = document.getElementById('art-bar');
+  if(oldBar) oldBar.remove();
+
   appendUser(text);
   appendTyping();
 
   history.push({role:'user', content:text});
 
-  // update sidebar title
   if(history.length === 1){
     const title = text.length > 32 ? text.substring(0,32)+'…' : text;
     document.getElementById('sessionTitle').textContent = title;
@@ -337,6 +429,7 @@ async function send(){
     }
 
     history.push({role:'assistant', content:fullText});
+    showArtBar();
 
   } catch(e){
     const typing = document.getElementById('typing-indicator');
