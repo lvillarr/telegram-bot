@@ -1608,7 +1608,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             rag_ctx = ""
         system     = SYSTEM_PROMPT + rag_ctx
-        reply = claude_response(system, user_msg, model=get_model_for_msg(context, user_msg), history=history)
+        reply = claude_response(system, user_msg, max_tokens=4096, model=get_model_for_msg(context, user_msg), history=history)
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
         uid = str(update.effective_user.id)
@@ -1689,7 +1689,8 @@ async def _analyze_image(context) -> str | None:
 
     response = client.messages.create(
         model=get_model(context),
-        max_tokens=1024,
+        max_tokens=4096,
+        temperature=0,
         system=_cached_system(SYSTEM_PROMPT),
         messages=[{"role": "user", "content": content}],
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
@@ -2017,7 +2018,7 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     skill_system = SYSTEM_PROMPT + "\n\n" + SKILL_PROMPTS[command]
-    reply = claude_response(skill_system, args, max_tokens=800, model=get_model(context))
+    reply = claude_response(skill_system, args, max_tokens=4096, model=get_model(context))
     await update.message.reply_text(fmt(reply), parse_mode="HTML")
 
 
@@ -3566,7 +3567,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             rag_ctx = ""
         system   = SYSTEM_PROMPT + rag_ctx
-        reply = claude_response(system, transcript, max_tokens=600,
+        reply = claude_response(system, transcript, max_tokens=4096,
                                 model=get_model_for_msg(context, transcript), history=history)
         push_history(context, transcript, reply)
         context.user_data["last_analysis"] = reply
@@ -3645,7 +3646,7 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{content[:10000]}"
     )
     history  = context.user_data.get("history", [])
-    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=800, model=get_model(context), history=history)
+    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=4096, model=get_model(context), history=history)
     push_history(context, f"[Análisis de {tipo}: {doc.file_name}]", analysis)
     context.user_data["last_analysis"] = analysis
     # Guarda datos estructurados (Excel) y contenido raw (PDF/Word/Excel)
