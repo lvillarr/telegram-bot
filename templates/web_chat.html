@@ -243,16 +243,26 @@ const COMMANDS = [
   ]},
 ];
 
-const ART_TYPES = [
-  {type:'html',           label:'🌐 HTML'},
-  {type:'excel',          label:'📊 Excel'},
-  {type:'pdf',            label:'📄 PDF'},
-  {type:'gantt',          label:'📅 Gantt'},
-  {type:'pptx',           label:'🖥️ PPT'},
-  {type:'email',          label:'📧 Email'},
-  {type:'planner',        label:'📋 Planner'},
-  {type:'planner_mobile', label:'📱 Planner Mobile'},
-];
+const ART_MENUS = {
+  root: [
+    {label:'📁 Editables', action:'menu', target:'editables'},
+    {label:'📋 Planner',   action:'menu', target:'planner'},
+  ],
+  editables: [
+    {label:'📊 Excel', action:'art', type:'excel'},
+    {label:'🖥️ PPT',   action:'art', type:'pptx'},
+    {label:'📄 PDF',   action:'art', type:'pdf'},
+    {label:'📅 Gantt', action:'art', type:'gantt'},
+    {label:'🌐 HTML',  action:'art', type:'html'},
+    {label:'📧 Email', action:'art', type:'email'},
+    {label:'← Volver', action:'menu', target:'root'},
+  ],
+  planner: [
+    {label:'🖥️ Desktop', action:'art', type:'planner'},
+    {label:'📱 Mobile',  action:'art', type:'planner_mobile'},
+    {label:'← Volver',  action:'menu', target:'root'},
+  ],
+};
 
 function now(){
   return new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
@@ -491,27 +501,35 @@ function showEmailDraft(d){
   el.scrollIntoView({behavior:'smooth', block:'nearest'});
 }
 
+function renderArtBar(menuKey){
+  const bar = document.getElementById('art-bar');
+  if(!bar) return;
+  const items = ART_MENUS[menuKey] || ART_MENUS.root;
+  bar.innerHTML = `<span class="art-label">Generar:</span>` +
+    items.map(item => {
+      if(item.action === 'menu')
+        return `<button class="art-btn" onclick="renderArtBar('${item.target}')">${item.label}</button>`;
+      return `<button class="art-btn" onclick="genArtifact('${item.type}',this)">${item.label}</button>`;
+    }).join('');
+}
+
 function showArtBar(){
-  const old = document.getElementById('art-bar');
-  if(old) old.remove();
+  document.getElementById('art-bar')?.remove();
   const bar = document.createElement('div');
   bar.className = 'art-bar';
   bar.id = 'art-bar';
-  bar.innerHTML = `<span class="art-label">Generar:</span>` +
-    ART_TYPES.map(a =>
-      `<button class="art-btn" id="ab-${a.type}" onclick="genArtifact('${a.type}')">${a.label}</button>`
-    ).join('');
   document.getElementById('messages').appendChild(bar);
+  renderArtBar('root');
   document.getElementById('messages').scrollTop = 99999;
 }
 
-async function genArtifact(type){
+async function genArtifact(type, btn){
   if(streaming) return;
   const bar = document.getElementById('art-bar');
-  const btns = bar ? bar.querySelectorAll('.art-btn') : [];
-  btns.forEach(b => { b.disabled = true; b.classList.add('loading'); });
-  const activeBtn = document.getElementById('ab-' + type);
-  if(activeBtn) activeBtn.textContent = '⏳ Generando...';
+  const allBtns = bar ? bar.querySelectorAll('.art-btn') : [];
+  allBtns.forEach(b => { b.disabled = true; b.classList.add('loading'); });
+  const origLabel = btn?.textContent || type;
+  if(btn) btn.textContent = '⏳ Generando...';
 
   try {
     const resp = await fetch('/api/artifact', {
@@ -522,8 +540,8 @@ async function genArtifact(type){
     const data = await resp.json();
 
     if(data.error){
-      if(activeBtn){ activeBtn.disabled=false; activeBtn.classList.remove('loading'); activeBtn.textContent = ART_TYPES.find(a=>a.type===type)?.label || type; }
-      btns.forEach(b => { b.disabled=false; b.classList.remove('loading'); });
+      allBtns.forEach(b => { b.disabled=false; b.classList.remove('loading'); });
+      if(btn) btn.textContent = origLabel;
       alert('Error: ' + data.error);
       return;
     }
@@ -532,35 +550,33 @@ async function genArtifact(type){
       window.open(data.url, '_blank');
     } else if(data.result_type === 'download'){
       const a = document.createElement('a');
-      a.href = data.url;
-      a.download = data.filename || 'arauco-archivo';
-      a.click();
+      a.href = data.url; a.download = data.filename || 'arauco-archivo'; a.click();
     } else if(data.result_type === 'email'){
       showEmailDraft(data.data);
     }
 
-    // Show result link in bar (for url / download)
-    if(bar && activeBtn && data.result_type !== 'email'){
-      const isDl = data.result_type === 'download';
-      const link = document.createElement('a');
-      link.href = data.url;
-      link.className = 'art-result' + (isDl ? ' dl' : '');
-      link.textContent = isDl ? `⬇ ${data.filename}` : '🔗 Abrir';
-      if(!isDl) link.target = '_blank';
-      else { link.download = data.filename; link.addEventListener('click', e => { e.preventDefault(); const a2=document.createElement('a'); a2.href=data.url; a2.download=data.filename; a2.click(); }); }
-      activeBtn.replaceWith(link);
-    } else if(bar && activeBtn && data.result_type === 'email'){
-      activeBtn.replaceWith(Object.assign(document.createElement('span'), {className:'art-result', textContent:'📧 Borrador listo'}));
+    // Replace clicked button with result link
+    if(btn){
+      if(data.result_type === 'email'){
+        btn.replaceWith(Object.assign(document.createElement('span'), {className:'art-result', textContent:'📧 Borrador listo'}));
+      } else if(data.result_type === 'url' || data.result_type === 'download'){
+        const isDl = data.result_type === 'download';
+        const link = document.createElement('a');
+        link.className = 'art-result' + (isDl ? ' dl' : '');
+        link.textContent = isDl ? `⬇ ${data.filename}` : '🔗 Abrir';
+        link.href = data.url;
+        if(!isDl) link.target = '_blank';
+        else { link.addEventListener('click', e => { e.preventDefault(); Object.assign(document.createElement('a'), {href:data.url, download:data.filename}).click(); }); }
+        btn.replaceWith(link);
+      }
     }
 
   } catch(e){
     alert('Error de red: ' + e.message);
   }
 
-  // Re-enable remaining buttons
-  document.querySelectorAll('.art-btn').forEach(b => {
-    b.disabled = false;
-    b.classList.remove('loading');
+  document.querySelectorAll('#art-bar .art-btn').forEach(b => {
+    b.disabled = false; b.classList.remove('loading');
   });
 }
 
