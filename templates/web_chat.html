@@ -201,6 +201,13 @@ let history = [];
 let streaming = false;
 let cmdFocusIdx = -1;
 
+// Session ID persistente en localStorage
+const SESSION_ID = (() => {
+  let id = localStorage.getItem('mc_session_id');
+  if(!id){ id = 'web-' + crypto.randomUUID(); localStorage.setItem('mc_session_id', id); }
+  return id;
+})();
+
 const COMMANDS = [
   {group:'Flujo de proyecto', items:[
     {cmd:'spec',         emoji:'📋', desc:'Especificación de iniciativa forestal'},
@@ -245,6 +252,70 @@ function setInput(t){
   ta.focus();
   ta.style.height = 'auto';
   ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+}
+
+// ── Historial compartido ────────────────────────────────────────────────────
+
+const PLATFORM_LABEL = {telegram:'📱 Telegram', web:'🌐 Web'};
+
+async function loadHistory(){
+  try {
+    const resp = await fetch('/api/history');
+    if(!resp.ok) return;
+    const data = await resp.json();
+    const msgs = (data.messages || []);
+    if(!msgs.length) return;
+
+    document.getElementById('emptyState')?.remove();
+
+    // Pre-populate history[] with last 20 msgs for Claude context (user+assistant only)
+    history = msgs.slice(-20).map(m => ({role: m.role, content: m.content}));
+
+    // Render all in UI
+    msgs.forEach(m => {
+      if(m.role === 'user')      renderHistoricUser(m);
+      else if(m.role === 'assistant') renderHistoricAI(m);
+    });
+
+    // Update sidebar
+    const last = msgs.filter(m => m.role === 'user').pop();
+    if(last){
+      const title = last.content.length > 32 ? last.content.slice(0,32)+'…' : last.content;
+      document.getElementById('sessionTitle').textContent = title;
+      document.getElementById('sessionTime').textContent = last.ts?.slice(11,16) || 'Antes';
+    }
+    document.getElementById('messages').scrollTop = 99999;
+  } catch(e){}
+}
+
+function renderHistoricUser(m){
+  const msgs = document.getElementById('messages');
+  const plat = PLATFORM_LABEL[m.platform] || m.platform;
+  const time = m.ts ? m.ts.slice(11,16) : '';
+  const d = document.createElement('div');
+  d.className = 'msg user';
+  d.innerHTML = `
+    <div class="avatar av-user" title="${plat}">LV</div>
+    <div class="msg-body">
+      <div class="msg-meta">${plat} · ${time}</div>
+      <div class="bubble">${m.content.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>
+    </div>`;
+  msgs.appendChild(d);
+}
+
+function renderHistoricAI(m){
+  const msgs = document.getElementById('messages');
+  const plat = PLATFORM_LABEL[m.platform] || m.platform;
+  const time = m.ts ? m.ts.slice(11,16) : '';
+  const d = document.createElement('div');
+  d.className = 'msg ai';
+  d.innerHTML = `
+    <div class="avatar av-ai" title="${plat}">MC</div>
+    <div class="msg-body">
+      <div class="msg-meta">Sistema · ${plat} · ${time}</div>
+      <div class="bubble">${renderMd(m.content)}</div>
+    </div>`;
+  msgs.appendChild(d);
 }
 
 // ── Paleta de comandos ──────────────────────────────────────────────────────
@@ -540,7 +611,8 @@ async function send(){
       body: JSON.stringify({
         message: text,
         history: history.slice(0,-1),
-        model: model
+        model: model,
+        session_id: SESSION_ID
       })
     });
 
@@ -603,6 +675,9 @@ async function send(){
   document.getElementById('sendBtn').disabled = false;
   document.getElementById('input').focus();
 }
+
+// Carga historial al abrir
+loadHistory();
 </script>
 </body>
 </html>

@@ -9,6 +9,7 @@ import asyncio
 import logging
 import threading
 import tempfile
+import sqlite3
 
 from datetime import datetime
 import anthropic
@@ -123,13 +124,15 @@ async def web_artifact(gid: str):
 @_web_app.post("/api/chat")
 async def web_api_chat(request: Request):
     body = await request.json()
-    message = body.get("message", "")
-    history = body.get("history", [])
-    model = body.get("model", "claude-sonnet-4-6")
+    message    = body.get("message", "")
+    history    = body.get("history", [])
+    model      = body.get("model", "claude-sonnet-4-6")
+    session_id = body.get("session_id", "web-anon")
 
     async def generate():
         msgs = list(history)
         msgs.append({"role": "user", "content": message})
+        full_text = ""
         try:
             async with _async_client.messages.stream(
                 model=model,
@@ -139,10 +142,14 @@ async def web_api_chat(request: Request):
                 extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
             ) as stream:
                 async for text in stream.text_stream:
+                    full_text += text
                     yield f"data: {json.dumps({'text': text})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'text': f'[Error: {e}]'})}\n\n"
         yield "data: [DONE]\n\n"
+        loop = asyncio.get_event_loop()
+        await loop.run_in_executor(None, _db_save, "web", session_id, "user", message)
+        await loop.run_in_executor(None, _db_save, "web", session_id, "assistant", full_text)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -253,6 +260,63 @@ threading.Thread(
     daemon=True,
 ).start()
 print(f"[HTTP] FastAPI en 0.0.0.0:{_HTTP_PORT}  |  base: {PUBLIC_BASE}")
+
+# ── Historial compartido en SQLite ────────────────────────────────────────────
+_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        "proyecto_claude", "datos", "arauco_mc.db")
+
+
+def _db_init():
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS chat_history (
+                    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                    platform    TEXT    NOT NULL,
+                    session_id  TEXT    NOT NULL,
+                    role        TEXT    NOT NULL,
+                    content     TEXT    NOT NULL,
+                    ts          DATETIME DEFAULT (datetime('now','localtime'))
+                )
+            """)
+            con.execute("CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_history(ts)")
+            con.commit()
+    except Exception as e:
+        print(f"[DB] init error: {e}")
+
+
+def _db_save(platform: str, session_id: str, role: str, content: str):
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            con.execute(
+                "INSERT INTO chat_history (platform, session_id, role, content) VALUES (?,?,?,?)",
+                (platform, str(session_id), role, content),
+            )
+            con.commit()
+    except Exception:
+        pass
+
+
+def _db_history(limit: int = 60) -> list:
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            rows = con.execute(
+                "SELECT platform, session_id, role, content, ts "
+                "FROM chat_history ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        rows.reverse()
+        return [{"platform": r[0], "session_id": r[1], "role": r[2],
+                 "content": r[3], "ts": r[4]} for r in rows]
+    except Exception:
+        return []
+
+
+@_web_app.get("/api/history")
+async def web_history():
+    loop = asyncio.get_event_loop()
+    rows = await loop.run_in_executor(None, _db_history, 80)
+    return {"messages": rows}
 
 
 def fmt(text: str) -> str:
@@ -1323,6 +1387,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = claude_response(system, user_msg, model=get_model_for_msg(context, user_msg), history=history)
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
+        uid = str(update.effective_user.id)
+        _db_save("telegram", uid, "user", user_msg)
+        _db_save("telegram", uid, "assistant", reply)
         await send_reply(update, reply, reply_markup=ARTIFACT_KEYBOARD, context=context)
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error al procesar: {_safe_err(e)}")
@@ -3751,4 +3818,5 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
 
+_db_init()
 app.run_polling(drop_pending_updates=True)
