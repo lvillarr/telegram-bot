@@ -114,6 +114,15 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .art-result:hover{background:#c8e6c9}
 .art-result.dl{background:#e3f2fd;color:#1565c0;border-color:#90caf9}
 .art-result.dl:hover{background:#bbdefb}
+
+.email-draft{margin:8px 0 4px 46px;background:#fff;border:1.5px solid #e0dbd4;border-radius:10px;overflow:hidden;max-width:720px;font-size:.83rem;animation:fadein .2s ease}
+.email-header{padding:10px 14px;border-bottom:1px solid #f0ede9;line-height:1.8;color:#555}
+.email-header strong{color:#333;font-weight:700}
+.email-asunto{font-weight:700;color:#333;font-size:.88rem;margin-bottom:2px}
+.email-body{padding:12px 14px;white-space:pre-wrap;color:#333;line-height:1.65;border-bottom:1px solid #f0ede9}
+.email-actions{padding:8px 14px;display:flex;gap:8px;flex-wrap:wrap}
+.email-action-btn{font-size:.72rem;padding:4px 12px;border-radius:14px;border:1.5px solid #e0dbd4;background:#f5f2ee;cursor:pointer;color:#555;font-family:'Lato',sans-serif;text-decoration:none;display:inline-block;transition:all .12s}
+.email-action-btn:hover{background:#696158;color:#fff;border-color:#696158}
 </style>
 </head>
 <body>
@@ -235,11 +244,14 @@ const COMMANDS = [
 ];
 
 const ART_TYPES = [
-  {type:'html',  label:'🌐 HTML'},
-  {type:'excel', label:'📊 Excel'},
-  {type:'pdf',   label:'📄 PDF'},
-  {type:'gantt', label:'📅 Gantt'},
-  {type:'pptx',  label:'🖥️ PPT'},
+  {type:'html',           label:'🌐 HTML'},
+  {type:'excel',          label:'📊 Excel'},
+  {type:'pdf',            label:'📄 PDF'},
+  {type:'gantt',          label:'📅 Gantt'},
+  {type:'pptx',           label:'🖥️ PPT'},
+  {type:'email',          label:'📧 Email'},
+  {type:'planner',        label:'📋 Planner'},
+  {type:'planner_mobile', label:'📱 Planner Mobile'},
 ];
 
 function now(){
@@ -451,6 +463,34 @@ function renderMd(text){
     .replace(/\n/g,'<br>');
 }
 
+function showEmailDraft(d){
+  document.getElementById('email-draft')?.remove();
+  const para   = d.para    || '';
+  const cc     = d.cc      || '';
+  const asunto = d.asunto  || '';
+  const cuerpo = d.cuerpo  || '';
+  const mailto = `mailto:${para}?${cc ? 'cc='+encodeURIComponent(cc)+'&' : ''}subject=${encodeURIComponent(asunto)}&body=${encodeURIComponent(cuerpo)}`;
+  const el = document.createElement('div');
+  el.className = 'email-draft';
+  el.id = 'email-draft';
+  el.innerHTML = `
+    <div class="email-header">
+      <div class="email-asunto">${asunto.replace(/</g,'&lt;')}</div>
+      <div><strong>Para:</strong> ${para.replace(/</g,'&lt;')}</div>
+      ${cc ? `<div><strong>CC:</strong> ${cc.replace(/</g,'&lt;')}</div>` : ''}
+    </div>
+    <div class="email-body">${cuerpo.replace(/</g,'&lt;')}</div>
+    <div class="email-actions">
+      <button class="email-action-btn" onclick="
+        navigator.clipboard.writeText(${JSON.stringify(cuerpo)}).then(()=>this.textContent='✓ Copiado').catch(()=>{});
+      ">📋 Copiar cuerpo</button>
+      <a class="email-action-btn" href="${mailto}">📤 Abrir en correo</a>
+      <button class="email-action-btn" style="margin-left:auto;color:#c00;border-color:#fbb" onclick="this.closest('.email-draft').remove()">✕</button>
+    </div>`;
+  document.getElementById('messages').appendChild(el);
+  el.scrollIntoView({behavior:'smooth', block:'nearest'});
+}
+
 function showArtBar(){
   const old = document.getElementById('art-bar');
   if(old) old.remove();
@@ -495,10 +535,12 @@ async function genArtifact(type){
       a.href = data.url;
       a.download = data.filename || 'arauco-archivo';
       a.click();
+    } else if(data.result_type === 'email'){
+      showEmailDraft(data.data);
     }
 
-    // Show result link in bar
-    if(bar && activeBtn){
+    // Show result link in bar (for url / download)
+    if(bar && activeBtn && data.result_type !== 'email'){
       const isDl = data.result_type === 'download';
       const link = document.createElement('a');
       link.href = data.url;
@@ -507,6 +549,8 @@ async function genArtifact(type){
       if(!isDl) link.target = '_blank';
       else { link.download = data.filename; link.addEventListener('click', e => { e.preventDefault(); const a2=document.createElement('a'); a2.href=data.url; a2.download=data.filename; a2.click(); }); }
       activeBtn.replaceWith(link);
+    } else if(bar && activeBtn && data.result_type === 'email'){
+      activeBtn.replaceWith(Object.assign(document.createElement('span'), {className:'art-result', textContent:'📧 Borrador listo'}));
     }
 
   } catch(e){

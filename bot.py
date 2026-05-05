@@ -196,8 +196,21 @@ async def web_api_artifact(request: Request):
     _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
 
     try:
+        # Planner — HTML estático, sin llamada a Claude
+        if art_type == "planner":
+            if not _PLANNER_HTML:
+                return {"error": "Planner no disponible en este entorno"}
+            url = store_html(_PLANNER_HTML)
+            return {"result_type": "url", "url": url}
+
+        if art_type == "planner_mobile":
+            if not _PLANNER_MOBILE_HTML:
+                return {"error": "Planner Mobile no disponible en este entorno"}
+            url = store_html(_PLANNER_MOBILE_HTML)
+            return {"result_type": "url", "url": url}
+
         # ARTIFACT_PROMPTS defined later in module — resolved lazily at call time
-        if art_type not in ARTIFACT_PROMPTS or art_type in ("planner", "planner_mobile", "notas_onenote"):
+        if art_type not in ARTIFACT_PROMPTS or art_type == "notas_onenote":
             return {"error": f"Tipo no soportado: {art_type}"}
 
         prompt = ARTIFACT_PROMPTS[art_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
@@ -246,6 +259,10 @@ async def web_api_artifact(request: Request):
             dl = _store_file(buf, f"{titulo}.pptx",
                              "application/vnd.openxmlformats-officedocument.presentationml.presentation")
             return {"result_type": "download", "url": dl, "filename": f"{titulo}.pptx"}
+
+        elif art_type == "email":
+            data = extract_json(raw)
+            return {"result_type": "email", "data": data}
 
         else:
             return {"error": f"Tipo no implementado: {art_type}"}
