@@ -134,7 +134,7 @@ async def web_api_chat(request: Request):
         files_data = [file_data]
 
     async def generate():
-        msgs = list(history[-10:])
+        msgs = [_cap_msg(m) for m in history[-10:]]
 
         if files_data:
             blocks = []
@@ -1019,7 +1019,9 @@ Incluye: esquema de datos, frecuencia de muestreo, estrategia de almacenamiento 
 client      = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 groq_client = groq_lib.Groq(api_key=os.environ["GROQ_API_KEY"])
 
-MAX_HISTORY = 20  # máximo de mensajes (turnos usuario+asistente) a conservar
+MAX_HISTORY          = 12    # máximo mensajes en historial (6 turnos)
+_HIST_TOKEN_BUDGET   = 6000  # tokens estimados máximos para historial
+_HIST_MSG_MAX_CHARS  = 1200  # truncar mensajes individuales largos
 
 _ARAUCO_LOGO_URL   = "https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png"
 _ARAUCO_LOGO_BYTES: bytes | None = None
@@ -1040,9 +1042,33 @@ def _get_logo_bytes() -> bytes | None:
     return _ARAUCO_LOGO_BYTES
 
 
+def _approx_tokens(text) -> int:
+    return max(1, len(str(text)) // 4)
+
+def _cap_msg(msg: dict) -> dict:
+    content = msg.get("content", "")
+    if isinstance(content, str) and len(content) > _HIST_MSG_MAX_CHARS:
+        content = content[:_HIST_MSG_MAX_CHARS] + "…"
+    return {**msg, "content": content}
+
 def trim_history(history: list) -> list:
-    """Mantiene solo los últimos MAX_HISTORY mensajes (par usuario/asistente)."""
-    return history[-MAX_HISTORY:]
+    """Recorta historial al token budget, truncando mensajes largos individualmente."""
+    # agrupar en pares user/assistant
+    flat = history[-MAX_HISTORY:]
+    pairs, i = [], 0
+    while i + 1 < len(flat):
+        pairs.append([_cap_msg(flat[i]), _cap_msg(flat[i+1])])
+        i += 2
+
+    # mantener pares más nuevos dentro del budget
+    total, kept = 0, []
+    for pair in reversed(pairs):
+        cost = sum(_approx_tokens(m.get("content", "")) for m in pair)
+        if total + cost > _HIST_TOKEN_BUDGET and kept:
+            break
+        total += cost
+        kept.insert(0, pair)
+    return [m for pair in kept for m in pair]
 
 
 def _safe_err(e: Exception) -> str:
