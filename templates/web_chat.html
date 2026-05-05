@@ -71,18 +71,33 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .typing-dots span:nth-child(3){animation-delay:.28s}
 @keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
 
-.input-area{padding:12px 20px 16px;background:#fff;border-top:1px solid #e0dbd4;flex-shrink:0}
+.input-area{padding:12px 20px 16px;background:#fff;border-top:1px solid #e0dbd4;flex-shrink:0;position:relative}
 .input-box{display:flex;gap:9px;align-items:flex-end;background:#f5f2ee;border:1.5px solid #DFD1A7;border-radius:10px;padding:9px 12px;transition:border-color .15s}
 .input-box:focus-within{border-color:#696158}
 .input-box textarea{flex:1;border:none;background:transparent;font-family:'Lato',sans-serif;font-size:.86rem;color:#333;resize:none;outline:none;line-height:1.5;max-height:100px;min-height:20px}
 .input-box textarea::placeholder{color:#bbb}
+.slash-btn{width:28px;height:28px;background:transparent;border:1.5px solid #DFD1A7;border-radius:6px;cursor:pointer;color:#696158;font-size:.85rem;font-weight:700;font-family:'Lato',sans-serif;flex-shrink:0;transition:all .12s;align-self:flex-end}
+.slash-btn:hover,.slash-btn.active{background:#696158;color:#fff;border-color:#696158}
 .send-btn{width:34px;height:34px;background:#696158;border:none;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
 .send-btn:hover:not(:disabled){background:#BFB800}
 .send-btn:disabled{opacity:.4;cursor:default}
 .send-btn svg{width:15px;height:15px;fill:#fff}
-.hints{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
-.hint{font-size:.7rem;padding:3px 9px;background:#f5f2ee;border:1px solid #DFD1A7;border-radius:16px;cursor:pointer;color:#696158;transition:all .12s}
-.hint:hover{background:#DFD1A7}
+
+.cmd-palette{display:none;position:absolute;bottom:calc(100% + 4px);left:20px;right:20px;background:#fff;border:1.5px solid #e0dbd4;border-radius:10px;box-shadow:0 8px 32px rgba(0,0,0,.12);max-height:340px;overflow-y:auto;z-index:100}
+.cmd-palette.open{display:block}
+.cmd-palette::-webkit-scrollbar{width:4px}
+.cmd-palette::-webkit-scrollbar-thumb{background:#d0c9c0;border-radius:2px}
+.cmd-search{padding:8px 12px;border-bottom:1px solid #f0ede9;display:flex;align-items:center;gap:6px;font-size:.78rem;color:#bbb}
+.cmd-search input{flex:1;border:none;outline:none;font-family:'Lato',sans-serif;font-size:.82rem;color:#333}
+.cmd-search input::placeholder{color:#ccc}
+.cmd-group-label{padding:6px 14px 2px;font-size:.6rem;font-weight:900;color:#BFB800;text-transform:uppercase;letter-spacing:.08em}
+.cmd-item{display:flex;align-items:center;gap:10px;padding:7px 14px;cursor:pointer;transition:background .1s}
+.cmd-item:hover,.cmd-item.focused{background:#f5f2ee}
+.cmd-item-icon{font-size:.9rem;width:20px;text-align:center;flex-shrink:0}
+.cmd-item-text{display:flex;flex-direction:column}
+.cmd-item-name{font-size:.8rem;font-weight:700;color:#333}
+.cmd-item-desc{font-size:.68rem;color:#aaa}
+.cmd-empty{padding:18px;text-align:center;font-size:.8rem;color:#ccc}
 
 .empty-state{margin:auto;text-align:center;padding:40px 20px;max-width:420px}
 .empty-state h2{font-size:1.2rem;font-weight:900;color:#696158;margin-bottom:8px}
@@ -160,20 +175,22 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
     </div>
 
     <div class="input-area">
+      <div class="cmd-palette" id="cmdPalette">
+        <div class="cmd-search">
+          <span>/</span>
+          <input id="cmdSearch" placeholder="Buscar comando..." oninput="filterCmds(this.value)" onkeydown="cmdKey(event)">
+        </div>
+        <div id="cmdList"></div>
+      </div>
       <div class="input-box">
-        <textarea id="input" placeholder="Consulta operacional, análisis, BPMN, KPIs..."
+        <button class="slash-btn" id="slashBtn" onclick="togglePalette()" title="Comandos">/</button>
+        <textarea id="input" placeholder="Escribe o usa / para comandos..."
           rows="1"
-          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"
-          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+          onkeydown="inputKeydown(event)"
+          oninput="onInputChange(this)"></textarea>
         <button class="send-btn" id="sendBtn" onclick="send()">
           <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
         </button>
-      </div>
-      <div class="hints">
-        <span class="hint" onclick="setInput('Diagnóstico OEE Línea 3 — último trimestre')">📊 OEE Línea 3</span>
-        <span class="hint" onclick="setInput('Genera BPMN AS-IS del proceso de cosecha con contratistas')">📋 BPMN cosecha</span>
-        <span class="hint" onclick="setInput('Informe semanal operacional: pérdidas, KPIs y estado de integraciones')">📄 Informe semanal</span>
-        <span class="hint" onclick="setInput('Analiza la tabla de pérdidas del SGL de esta semana')">🔍 Análisis SGL</span>
       </div>
     </div>
   </div>
@@ -182,6 +199,33 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 <script>
 let history = [];
 let streaming = false;
+let cmdFocusIdx = -1;
+
+const COMMANDS = [
+  {group:'Flujo de proyecto', items:[
+    {cmd:'spec',         emoji:'📋', desc:'Especificación de iniciativa forestal'},
+    {cmd:'plan',         emoji:'🗺️', desc:'Plan de ejecución forestal'},
+    {cmd:'build',        emoji:'🔨', desc:'Construcción de solución forestal'},
+    {cmd:'test',         emoji:'🧪', desc:'Validación en operación forestal'},
+    {cmd:'review',       emoji:'🔍', desc:'Revisión crítica forestal'},
+    {cmd:'ship',         emoji:'🚀', desc:'Lanzamiento a operación forestal'},
+  ]},
+  {group:'Especialidades', items:[
+    {cmd:'telemetry',    emoji:'📊', desc:'Telemetría de maquinaria forestal'},
+    {cmd:'automation',   emoji:'⚙️', desc:'Automatización de procesos forestales'},
+    {cmd:'connectivity', emoji:'📡', desc:'Conectividad en predios remotos'},
+    {cmd:'facilitation', emoji:'🤝', desc:'Facilitación de talleres Lean'},
+    {cmd:'artifact',     emoji:'🎨', desc:'Genera HTML, Excel o gráfico PNG'},
+    {cmd:'planner',      emoji:'📋', desc:'Dashboard Planner MC'},
+    {cmd:'notas',        emoji:'📝', desc:'Activar modo notas'},
+  ]},
+  {group:'Sistema', items:[
+    {cmd:'reset',        emoji:'🔄', desc:'Reiniciar conversación'},
+    {cmd:'modelo',       emoji:'🤖', desc:'Seleccionar modelo LLM'},
+    {cmd:'indexar',      emoji:'📚', desc:'Indexar documentos en RAG'},
+    {cmd:'notebookrag',  emoji:'📖', desc:'Consultar base de conocimiento Arauco'},
+  ]},
+];
 
 const ART_TYPES = [
   {type:'html',  label:'🌐 HTML'},
@@ -202,6 +246,112 @@ function setInput(t){
   ta.style.height = 'auto';
   ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
 }
+
+// ── Paleta de comandos ──────────────────────────────────────────────────────
+
+function renderCmdList(filter){
+  const list = document.getElementById('cmdList');
+  cmdFocusIdx = -1;
+  const f = filter.toLowerCase();
+  let html = '';
+  let total = 0;
+  COMMANDS.forEach(group => {
+    const items = group.items.filter(i =>
+      !f || i.cmd.includes(f) || i.desc.toLowerCase().includes(f)
+    );
+    if(!items.length) return;
+    html += `<div class="cmd-group-label">${group.group}</div>`;
+    items.forEach(i => {
+      html += `<div class="cmd-item" data-cmd="${i.cmd}" onclick="selectCmd('${i.cmd}')">
+        <span class="cmd-item-icon">${i.emoji}</span>
+        <span class="cmd-item-text">
+          <span class="cmd-item-name">/${i.cmd}</span>
+          <span class="cmd-item-desc">${i.desc}</span>
+        </span>
+      </div>`;
+      total++;
+    });
+  });
+  list.innerHTML = total ? html : '<div class="cmd-empty">Sin resultados</div>';
+}
+
+function openPalette(){
+  const p = document.getElementById('cmdPalette');
+  const s = document.getElementById('cmdSearch');
+  p.classList.add('open');
+  document.getElementById('slashBtn').classList.add('active');
+  s.value = '';
+  renderCmdList('');
+  s.focus();
+}
+
+function closePalette(){
+  document.getElementById('cmdPalette').classList.remove('open');
+  document.getElementById('slashBtn').classList.remove('active');
+  cmdFocusIdx = -1;
+}
+
+function togglePalette(){
+  const open = document.getElementById('cmdPalette').classList.contains('open');
+  open ? closePalette() : openPalette();
+}
+
+function filterCmds(v){ renderCmdList(v); }
+
+function selectCmd(cmd){
+  closePalette();
+  const ta = document.getElementById('input');
+  ta.value = '/' + cmd + ' ';
+  ta.focus();
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+}
+
+function cmdKey(e){
+  const items = document.querySelectorAll('#cmdList .cmd-item');
+  if(e.key === 'ArrowDown'){
+    e.preventDefault();
+    cmdFocusIdx = Math.min(cmdFocusIdx + 1, items.length - 1);
+  } else if(e.key === 'ArrowUp'){
+    e.preventDefault();
+    cmdFocusIdx = Math.max(cmdFocusIdx - 1, 0);
+  } else if(e.key === 'Enter' && cmdFocusIdx >= 0){
+    e.preventDefault();
+    const cmd = items[cmdFocusIdx]?.dataset?.cmd;
+    if(cmd) selectCmd(cmd);
+    return;
+  } else if(e.key === 'Escape'){
+    closePalette();
+    document.getElementById('input').focus();
+    return;
+  }
+  items.forEach((el,i) => el.classList.toggle('focused', i === cmdFocusIdx));
+  if(items[cmdFocusIdx]) items[cmdFocusIdx].scrollIntoView({block:'nearest'});
+}
+
+function inputKeydown(e){
+  if(e.key === 'Enter' && !e.shiftKey){ e.preventDefault(); send(); return; }
+  if(e.key === 'Escape'){ closePalette(); return; }
+}
+
+function onInputChange(ta){
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+  const v = ta.value;
+  if(v === '/'){
+    openPalette();
+  } else if(!v.startsWith('/')){
+    closePalette();
+  }
+}
+
+// Cierra paleta al hacer clic fuera
+document.addEventListener('click', e => {
+  const p = document.getElementById('cmdPalette');
+  if(!p.contains(e.target) && e.target.id !== 'slashBtn'){
+    closePalette();
+  }
+});
 
 function newChat(){
   history = [];
@@ -364,6 +514,7 @@ async function send(){
   document.getElementById('sendBtn').disabled = true;
   streaming = true;
 
+  closePalette();
   // Remove previous art-bar when user sends new message
   const oldBar = document.getElementById('art-bar');
   if(oldBar) oldBar.remove();
