@@ -130,17 +130,20 @@ async def web_api_chat(request: Request):
     session_id = body.get("session_id", "web-anon")
 
     async def generate():
-        msgs = list(history)
+        msgs = list(history[-10:])  # cap context at 10 msgs to reduce TTFT
         msgs.append({"role": "user", "content": message})
         full_text = ""
+        stream_kwargs = dict(
+            model=model,
+            max_tokens=2048,
+            system=_cached_system(SYSTEM_PROMPT),
+            messages=msgs,
+            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+        )
+        if model in _EFFORT_MODELS:
+            stream_kwargs["output_config"] = {"effort": "low"}
         try:
-            async with _async_client.messages.stream(
-                model=model,
-                max_tokens=4096,
-                system=_cached_system(SYSTEM_PROMPT),
-                messages=msgs,
-                extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-            ) as stream:
+            async with _async_client.messages.stream(**stream_kwargs) as stream:
                 async for text in stream.text_stream:
                     full_text += text
                     yield f"data: {json.dumps({'text': text})}\n\n"
