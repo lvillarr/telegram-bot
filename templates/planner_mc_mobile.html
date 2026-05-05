@@ -880,7 +880,7 @@ function copySummary(){
   });
 
   let txt=`📋 *Resumen Semana ${fmt(ws)} – ${fmt(we)}*\n`;
-  txt+=`✅ ${gD} · 🔵 ${gI} · ⬜ ${gP} · 🔴 ${gL}\n\n`;
+  txt+=`✅ _${gD} ${gD===1?'lista':'listas'}_ · 🔵 _${gI} en curso_ · ⬜ _${gP} por iniciar_ · 🔴 _${gL} ${gL===1?'vencida':'vencidas'}_\n\n`;
 
   groups.forEach((tasks,lbl)=>{
     txt+=`*${lbl}*\n`;
