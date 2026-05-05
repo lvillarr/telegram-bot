@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mejora Continua IA — Arauco</title>
+<link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;height:100vh;display:flex;flex-direction:column;overflow:hidden}
+
+.header{background:#696158;color:#fff;padding:0 24px;height:54px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.2)}
+.header-left{display:flex;align-items:center;gap:14px}
+.logo{height:26px;filter:brightness(0) invert(1);opacity:.9}
+.header-title{font-size:.95rem;font-weight:700}
+.header-sub{font-size:.72rem;color:rgba(255,255,255,.6);font-weight:300}
+.model-selector{background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);color:#fff;font-family:'Lato',sans-serif;font-size:.75rem;padding:5px 10px;border-radius:6px;cursor:pointer;outline:none}
+.model-selector option{background:#696158;color:#fff}
+
+.main{display:flex;flex:1;overflow:hidden}
+
+.sidebar{width:220px;background:#fff;border-right:1px solid #e0dbd4;display:flex;flex-direction:column;flex-shrink:0}
+.new-btn{margin:12px;padding:9px;background:#BFB800;color:#fff;border:none;border-radius:8px;font-family:'Lato',sans-serif;font-weight:700;font-size:.82rem;cursor:pointer}
+.new-btn:hover{background:#a8a200}
+.sidebar-label{padding:10px 16px 4px;font-size:.62rem;font-weight:900;color:#BFB800;text-transform:uppercase;letter-spacing:.08em}
+.sidebar-item{display:flex;align-items:center;gap:9px;padding:8px 14px;cursor:pointer;border-left:3px solid transparent;transition:background .12s}
+.sidebar-item:hover{background:#f5f2ee}
+.sidebar-item.active{background:#f5f2ee;border-left-color:#BFB800}
+.s-icon{width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;color:#fff}
+.s-label{font-size:.78rem;font-weight:700;color:#444}
+.s-desc{font-size:.66rem;color:#aaa}
+.sidebar-divider{height:1px;background:#f0ede9;margin:6px 14px}
+
+.chat-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.messages{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
+.messages::-webkit-scrollbar{width:5px}
+.messages::-webkit-scrollbar-thumb{background:#d0c9c0;border-radius:3px}
+
+.msg{display:flex;gap:10px;max-width:800px}
+.msg.user{flex-direction:row-reverse;align-self:flex-end}
+.avatar{width:32px;height:32px;border-radius:7px;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:.7rem;font-weight:900;color:#fff}
+.av-user{background:#696158}
+.av-ai{background:#BFB800}
+.msg-body{display:flex;flex-direction:column;gap:3px;min-width:0}
+.msg-meta{font-size:.64rem;font-weight:700;color:#bbb;text-transform:uppercase;letter-spacing:.04em}
+.msg.user .msg-meta{text-align:right}
+.bubble{padding:10px 14px;border-radius:10px;font-size:.86rem;line-height:1.65;word-break:break-word}
+.msg.user .bubble{background:#696158;color:#fff;border-radius:10px 3px 10px 10px}
+.msg.ai .bubble{background:#fff;color:#333;border-radius:3px 10px 10px 10px;box-shadow:0 1px 4px rgba(0,0,0,.06);border:1px solid #eee}
+.bubble strong{font-weight:700}
+.bubble em{font-style:italic}
+.bubble code{font-family:monospace;background:#f0ede9;padding:1px 5px;border-radius:3px;font-size:.82rem}
+.bubble pre{background:#1e1e1e;color:#d4d4d4;padding:12px;border-radius:7px;overflow-x:auto;font-size:.78rem;margin:8px 0}
+.bubble pre code{background:none;padding:0;color:inherit}
+.bubble ul,
+.bubble ol{padding-left:18px;margin:6px 0}
+.bubble li{margin:3px 0}
+.bubble table{width:100%;border-collapse:collapse;font-size:.8rem;margin:8px 0}
+.bubble th{background:#696158;color:#fff;padding:6px 9px;text-align:left;font-size:.72rem;font-weight:700;text-transform:uppercase}
+.bubble td{padding:6px 9px;border-bottom:1px solid #eee}
+.bubble tr:nth-child(even) td{background:#f9f7f5}
+.bubble h3{font-size:.9rem;color:#696158;margin:10px 0 4px;font-weight:700}
+.bubble p{margin:4px 0}
+.agent-tag{display:inline-block;font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.tag-orq{background:#696158;color:#fff}
+.msg-time{font-size:.62rem;color:#ccc}
+
+.typing-dots{display:flex;gap:4px;padding:10px 14px;background:#fff;border-radius:3px 10px 10px 10px;border:1px solid #eee;width:fit-content}
+.typing-dots span{width:6px;height:6px;background:#BFB800;border-radius:50%;animation:bounce .7s infinite}
+.typing-dots span:nth-child(2){animation-delay:.14s}
+.typing-dots span:nth-child(3){animation-delay:.28s}
+@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
+
+.input-area{padding:12px 20px 16px;background:#fff;border-top:1px solid #e0dbd4;flex-shrink:0}
+.input-box{display:flex;gap:9px;align-items:flex-end;background:#f5f2ee;border:1.5px solid #DFD1A7;border-radius:10px;padding:9px 12px;transition:border-color .15s}
+.input-box:focus-within{border-color:#696158}
+.input-box textarea{flex:1;border:none;background:transparent;font-family:'Lato',sans-serif;font-size:.86rem;color:#333;resize:none;outline:none;line-height:1.5;max-height:100px;min-height:20px}
+.input-box textarea::placeholder{color:#bbb}
+.send-btn{width:34px;height:34px;background:#696158;border:none;border-radius:7px;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background .12s}
+.send-btn:hover:not(:disabled){background:#BFB800}
+.send-btn:disabled{opacity:.4;cursor:default}
+.send-btn svg{width:15px;height:15px;fill:#fff}
+.hints{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+.hint{font-size:.7rem;padding:3px 9px;background:#f5f2ee;border:1px solid #DFD1A7;border-radius:16px;cursor:pointer;color:#696158;transition:all .12s}
+.hint:hover{background:#DFD1A7}
+
+.empty-state{margin:auto;text-align:center;padding:40px 20px;max-width:420px}
+.empty-state h2{font-size:1.2rem;font-weight:900;color:#696158;margin-bottom:8px}
+.empty-state p{font-size:.85rem;color:#aaa;line-height:1.6}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-left">
+    <img src="https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco.png"
+         class="logo" onerror="this.style.display='none'">
+    <div>
+      <div class="header-title">Mejora Continua IA</div>
+      <div class="header-sub">Subgerencia MC — Arauco</div>
+    </div>
+  </div>
+  <select class="model-selector" id="modelSelect">
+    <option value="claude-sonnet-4-6">Sonnet 4.6 (recomendado)</option>
+    <option value="claude-haiku-4-5-20251001">Haiku 4.5 (rápido)</option>
+    <option value="claude-opus-4-7">Opus 4.7 (complejo)</option>
+  </select>
+</div>
+
+<div class="main">
+  <div class="sidebar">
+    <button class="new-btn" onclick="newChat()">+ Nueva conversación</button>
+    <div class="sidebar-label">Agentes</div>
+    <div class="sidebar-item active">
+      <div class="s-icon" style="background:#696158">⚙</div>
+      <div><div class="s-label">Orquestador</div><div class="s-desc">Síntesis ejecutiva</div></div>
+    </div>
+    <div class="sidebar-item">
+      <div class="s-icon" style="background:#EA7600">📋</div>
+      <div><div class="s-label">Excelencia Op.</div><div class="s-desc">Lean, BPMN, KPIs</div></div>
+    </div>
+    <div class="sidebar-item">
+      <div class="s-icon" style="background:#BFB800">🤖</div>
+      <div><div class="s-label">Inteligencia IA</div><div class="s-desc">ML, GenAI, dashboards</div></div>
+    </div>
+    <div class="sidebar-item">
+      <div class="s-icon" style="background:#DFD1A7;color:#696158">⚡</div>
+      <div><div class="s-label">Transf. Digital</div><div class="s-desc">APIs, ETL, telemetría</div></div>
+    </div>
+    <div class="sidebar-item">
+      <div class="s-icon" style="background:#f0ede9;color:#696158">📊</div>
+      <div><div class="s-label">Análisis Datos</div><div class="s-desc">Excel, PDF, reportes</div></div>
+    </div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-label">Sesión actual</div>
+    <div class="sidebar-item active" id="sessionItem">
+      <div class="s-icon" style="background:#696158;font-size:.6rem">HOY</div>
+      <div><div class="s-label" id="sessionTitle">Nueva conversación</div><div class="s-desc" id="sessionTime">Ahora</div></div>
+    </div>
+  </div>
+
+  <div class="chat-wrap">
+    <div class="messages" id="messages">
+      <div class="empty-state" id="emptyState">
+        <h2>Sistema Multiagente Arauco</h2>
+        <p>Orquestador + EO + IA + TD + DA coordinados.<br>Acceso directo a <code>arauco_mc.db</code> y datos operacionales.</p>
+      </div>
+    </div>
+
+    <div class="input-area">
+      <div class="input-box">
+        <textarea id="input" placeholder="Consulta operacional, análisis, BPMN, KPIs..."
+          rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();send()}"
+          oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,100)+'px'"></textarea>
+        <button class="send-btn" id="sendBtn" onclick="send()">
+          <svg viewBox="0 0 24 24"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg>
+        </button>
+      </div>
+      <div class="hints">
+        <span class="hint" onclick="setInput('Diagnóstico OEE Línea 3 — último trimestre')">📊 OEE Línea 3</span>
+        <span class="hint" onclick="setInput('Genera BPMN AS-IS del proceso de cosecha con contratistas')">📋 BPMN cosecha</span>
+        <span class="hint" onclick="setInput('Informe semanal operacional: pérdidas, KPIs y estado de integraciones')">📄 Informe semanal</span>
+        <span class="hint" onclick="setInput('Analiza la tabla de pérdidas del SGL de esta semana')">🔍 Análisis SGL</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+let history = [];
+let streaming = false;
+
+function now(){
+  return new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
+}
+
+function setInput(t){
+  const ta = document.getElementById('input');
+  ta.value = t;
+  ta.focus();
+  ta.style.height = 'auto';
+  ta.style.height = Math.min(ta.scrollHeight, 100) + 'px';
+}
+
+function newChat(){
+  history = [];
+  document.getElementById('messages').innerHTML = `
+    <div class="empty-state" id="emptyState">
+      <h2>Sistema Multiagente Arauco</h2>
+      <p>Orquestador + EO + IA + TD + DA coordinados.<br>Acceso directo a <code>arauco_mc.db</code> y datos operacionales.</p>
+    </div>`;
+  document.getElementById('sessionTitle').textContent = 'Nueva conversación';
+  document.getElementById('sessionTime').textContent = 'Ahora';
+}
+
+function renderMd(text){
+  return text
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_,lang,code) =>
+      `<pre><code>${code.trim()}</code></pre>`)
+    .replace(/`([^`]+)`/g,'<code>$1</code>')
+    .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
+    .replace(/\*([^*]+)\*/g,'<em>$1</em>')
+    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^## (.+)$/gm,'<h3>$1</h3>')
+    .replace(/^- (.+)$/gm,'<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
+    .replace(/\n{2,}/g,'</p><p>')
+    .replace(/\n/g,'<br>');
+}
+
+function appendUser(text){
+  const empty = document.getElementById('emptyState');
+  if(empty) empty.remove();
+
+  const msgs = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg user';
+  d.innerHTML = `
+    <div class="avatar av-user">LV</div>
+    <div class="msg-body">
+      <div class="msg-meta">Luciano · ${now()}</div>
+      <div class="bubble">${text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>')}</div>
+    </div>`;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+}
+
+function appendTyping(){
+  const msgs = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg ai';
+  d.id = 'typing-indicator';
+  d.innerHTML = `
+    <div class="avatar av-ai">MC</div>
+    <div class="msg-body">
+      <div class="msg-meta">Sistema</div>
+      <div class="typing-dots"><span></span><span></span><span></span></div>
+    </div>`;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+  return d;
+}
+
+function appendAI(text){
+  const typing = document.getElementById('typing-indicator');
+  if(typing) typing.remove();
+
+  const msgs = document.getElementById('messages');
+  const d = document.createElement('div');
+  d.className = 'msg ai';
+  d.id = 'ai-streaming';
+  d.innerHTML = `
+    <div class="avatar av-ai">MC</div>
+    <div class="msg-body">
+      <div class="msg-meta">Sistema · ${now()}</div>
+      <div class="bubble" id="ai-bubble"><span class="agent-tag tag-orq">Orquestador</span><br>${renderMd(text)}</div>
+    </div>`;
+  msgs.appendChild(d);
+  msgs.scrollTop = msgs.scrollHeight;
+  return document.getElementById('ai-bubble');
+}
+
+async function send(){
+  if(streaming) return;
+  const ta = document.getElementById('input');
+  const text = ta.value.trim();
+  if(!text) return;
+
+  const model = document.getElementById('modelSelect').value;
+
+  ta.value = '';
+  ta.style.height = 'auto';
+  document.getElementById('sendBtn').disabled = true;
+  streaming = true;
+
+  appendUser(text);
+  appendTyping();
+
+  history.push({role:'user', content:text});
+
+  // update sidebar title
+  if(history.length === 1){
+    const title = text.length > 32 ? text.substring(0,32)+'…' : text;
+    document.getElementById('sessionTitle').textContent = title;
+    document.getElementById('sessionTime').textContent = now();
+  }
+
+  let fullText = '';
+  let bubble = null;
+
+  try {
+    const resp = await fetch('/api/chat', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        message: text,
+        history: history.slice(0,-1),
+        model: model
+      })
+    });
+
+    if(!resp.ok) throw new Error(`Error ${resp.status}`);
+
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+
+    while(true){
+      const {done, value} = await reader.read();
+      if(done) break;
+
+      buffer += decoder.decode(value, {stream:true});
+      const lines = buffer.split('\n');
+      buffer = lines.pop();
+
+      for(const line of lines){
+        if(!line.startsWith('data:')) continue;
+        const data = line.slice(5).trim();
+        if(data === '[DONE]') break;
+        try {
+          const parsed = JSON.parse(data);
+          if(parsed.text){
+            fullText += parsed.text;
+            if(!bubble){
+              const typing = document.getElementById('typing-indicator');
+              if(typing) typing.remove();
+              bubble = appendAI(fullText);
+            } else {
+              bubble.innerHTML = `<span class="agent-tag tag-orq">Orquestador</span><br>${renderMd(fullText)}`;
+            }
+            document.getElementById('messages').scrollTop = 99999;
+          }
+        } catch(_){}
+      }
+    }
+
+    history.push({role:'assistant', content:fullText});
+
+  } catch(e){
+    const typing = document.getElementById('typing-indicator');
+    if(typing) typing.remove();
+    const msgs = document.getElementById('messages');
+    const err = document.createElement('div');
+    err.className = 'msg ai';
+    err.innerHTML = `
+      <div class="avatar av-ai">MC</div>
+      <div class="msg-body">
+        <div class="bubble" style="background:#fff0f0;border-color:#ffcccc;color:#c00">
+          Error de conexión. Verifica que el servidor está activo.
+        </div>
+      </div>`;
+    msgs.appendChild(err);
+    history.pop();
+  }
+
+  streaming = false;
+  document.getElementById('sendBtn').disabled = false;
+  document.getElementById('input').focus();
+}
+</script>
+</body>
+</html>

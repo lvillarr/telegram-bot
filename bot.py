@@ -17,7 +17,9 @@ import rag
 import openpyxl
 import pdfplumber
 from collections import OrderedDict
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import uvicorn
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, PlainTextResponse, StreamingResponse
 from docx import Document as DocxDocument
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, CallbackQueryHandler, filters, PicklePersistence
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
@@ -72,46 +74,83 @@ tbody tr:nth-child(even){background:#EDEAE6}
 @media(max-width:768px){.grid-2,.grid-3,.grid-4{grid-template-columns:1fr}}
 """
 
-class _HTMLHandler(BaseHTTPRequestHandler):
-    def log_message(self, fmt, *args):
-        pass  # silencia logs de acceso
+_async_client = anthropic.AsyncAnthropic()
+_web_app = FastAPI()
 
-    def do_GET(self):
-        path = self.path.split("?")[0]
-        if path == "/health":
-            self._respond(200, b"ok", "text/plain")
-        elif path == "/arauco.css":
-            self._respond(200, _ARAUCO_CSS.encode("utf-8"), "text/css; charset=utf-8")
-        elif path.startswith("/g/"):
-            gid  = path[3:]
-            if not re.fullmatch(r"[0-9a-f]{32}", gid):
-                self._respond(400, b"ID invalido.", "text/plain")
-                return
-            html = _HTML_STORE.get(gid)
-            if html:
-                data = html.encode("utf-8")
-                self._respond(200, data, "text/html; charset=utf-8")
-            else:
-                self._respond(404, b"No encontrado o expirado.", "text/plain")
-        else:
-            self._respond(404, b"", "text/plain")
-
-    def _respond(self, code, body, ctype):
-        self.send_response(code)
-        self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+_WEB_CHAT_HTML: str | None = None
+_WEB_CHAT_PATH = os.path.join(os.path.dirname(__file__), "templates", "web_chat.html")
 
 
-def _start_http_server():
-    server = HTTPServer(("0.0.0.0", _HTTP_PORT), _HTMLHandler)
-    print(f"[HTTP] servidor en 0.0.0.0:{_HTTP_PORT}  |  base: {PUBLIC_BASE}")
-    server.serve_forever()
+def _load_web_chat_html() -> str:
+    global _WEB_CHAT_HTML
+    if _WEB_CHAT_HTML is None:
+        try:
+            with open(_WEB_CHAT_PATH, "r", encoding="utf-8") as f:
+                _WEB_CHAT_HTML = f.read()
+        except FileNotFoundError:
+            _WEB_CHAT_HTML = "<h1>Web UI not found</h1>"
+    return _WEB_CHAT_HTML
 
 
-# Arranca el servidor en un hilo daemon (muere cuando termina el proceso)
-threading.Thread(target=_start_http_server, daemon=True).start()
+@_web_app.get("/", response_class=HTMLResponse)
+async def web_root():
+    return _load_web_chat_html()
+
+
+@_web_app.get("/health", response_class=PlainTextResponse)
+async def web_health():
+    return "ok"
+
+
+@_web_app.get("/arauco.css")
+async def web_css():
+    from fastapi.responses import Response
+    return Response(content=_ARAUCO_CSS, media_type="text/css; charset=utf-8")
+
+
+@_web_app.get("/g/{gid}", response_class=HTMLResponse)
+async def web_artifact(gid: str):
+    if not re.fullmatch(r"[0-9a-f]{32}", gid):
+        return PlainTextResponse("ID invalido.", status_code=400)
+    html = _HTML_STORE.get(gid)
+    if html:
+        return html
+    return PlainTextResponse("No encontrado o expirado.", status_code=404)
+
+
+@_web_app.post("/api/chat")
+async def web_api_chat(request: Request):
+    body = await request.json()
+    message = body.get("message", "")
+    history = body.get("history", [])
+    model = body.get("model", "claude-sonnet-4-6")
+
+    async def generate():
+        msgs = list(history)
+        msgs.append({"role": "user", "content": message})
+        try:
+            async with _async_client.messages.stream(
+                model=model,
+                max_tokens=4096,
+                system=_cached_system(SYSTEM_PROMPT),
+                messages=msgs,
+                extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+            ) as stream:
+                async for text in stream.text_stream:
+                    yield f"data: {json.dumps({'text': text})}\n\n"
+        except Exception as e:
+            yield f"data: {json.dumps({'text': f'[Error: {e}]'})}\n\n"
+        yield "data: [DONE]\n\n"
+
+    return StreamingResponse(generate(), media_type="text/event-stream")
+
+
+# Arranca FastAPI/uvicorn en hilo daemon (muere cuando termina el proceso)
+threading.Thread(
+    target=lambda: uvicorn.run(_web_app, host="0.0.0.0", port=_HTTP_PORT, log_level="warning"),
+    daemon=True,
+).start()
+print(f"[HTTP] FastAPI en 0.0.0.0:{_HTTP_PORT}  |  base: {PUBLIC_BASE}")
 
 
 def fmt(text: str) -> str:
