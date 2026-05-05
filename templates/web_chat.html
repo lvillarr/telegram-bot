@@ -19,7 +19,13 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 
 .main{display:flex;flex:1;overflow:hidden}
 
-.sidebar{width:220px;background:#fff;border-right:1px solid #e0dbd4;display:flex;flex-direction:column;flex-shrink:0}
+.sidebar{width:220px;background:#fff;border-right:1px solid #e0dbd4;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
+.sidebar-hist-item{display:flex;align-items:center;gap:9px;padding:7px 14px;cursor:pointer;border-left:3px solid transparent;transition:background .12s}
+.sidebar-hist-item:hover{background:#f5f2ee}
+.sidebar-hist-item.active{background:#f5f2ee;border-left-color:#BFB800}
+.s-hist-title{font-size:.75rem;font-weight:700;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.s-hist-time{font-size:.64rem;color:#bbb}
+.no-hist{padding:6px 16px 10px;font-size:.7rem;color:#ccc}
 .new-btn{margin:12px;padding:9px;background:#BFB800;color:#fff;border:none;border-radius:8px;font-family:'Lato',sans-serif;font-weight:700;font-size:.82rem;cursor:pointer}
 .new-btn:hover{background:#a8a200}
 .sidebar-label{padding:10px 16px 4px;font-size:.62rem;font-weight:900;color:#BFB800;text-transform:uppercase;letter-spacing:.08em}
@@ -173,6 +179,9 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
       <div class="s-icon" style="background:#696158;font-size:.6rem">HOY</div>
       <div><div class="s-label" id="sessionTitle">Nueva conversación</div><div class="s-desc" id="sessionTime">Ahora</div></div>
     </div>
+    <div class="sidebar-divider"></div>
+    <div class="sidebar-label">Historial</div>
+    <div id="historialList"><div class="no-hist">Sin conversaciones guardadas</div></div>
   </div>
 
   <div class="chat-wrap">
@@ -209,13 +218,87 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 let history = [];
 let streaming = false;
 let cmdFocusIdx = -1;
+let currentMessages = []; // [{role, content, ts}] para guardar en historial
 
-// Session ID persistente en localStorage
+// Session ID del turno actual
+let currentConvId = 'web-' + crypto.randomUUID();
+
+// Session ID global persistente (para DB compartida con Telegram)
 const SESSION_ID = (() => {
   let id = localStorage.getItem('mc_session_id');
   if(!id){ id = 'web-' + crypto.randomUUID(); localStorage.setItem('mc_session_id', id); }
   return id;
 })();
+
+// ── Historial local (localStorage) ──────────────────────────────────────────
+
+const CONV_KEY = 'mc_conv_history';
+const MAX_CONVS = 30;
+
+function getLocalConvs(){
+  try{ return JSON.parse(localStorage.getItem(CONV_KEY) || '[]'); }
+  catch{ return []; }
+}
+
+function saveCurrentConversation(){
+  if(!currentMessages.length) return;
+  const convs = getLocalConvs().filter(c => c.id !== currentConvId);
+  const firstUser = currentMessages.find(m => m.role === 'user');
+  convs.unshift({
+    id: currentConvId,
+    title: firstUser ? firstUser.content.slice(0,52) : 'Conversación',
+    ts: currentMessages[0]?.ts || now(),
+    messages: currentMessages,
+    history: history.slice(),
+  });
+  if(convs.length > MAX_CONVS) convs.length = MAX_CONVS;
+  localStorage.setItem(CONV_KEY, JSON.stringify(convs));
+}
+
+function renderSidebarHistory(){
+  const list = document.getElementById('historialList');
+  if(!list) return;
+  const convs = getLocalConvs();
+  if(!convs.length){
+    list.innerHTML = '<div class="no-hist">Sin conversaciones guardadas</div>';
+    return;
+  }
+  list.innerHTML = convs.map(c => `
+    <div class="sidebar-hist-item ${c.id === currentConvId ? 'active' : ''}" onclick="restoreConversation('${c.id}')">
+      <div class="s-icon" style="background:#f0ede9;color:#696158;font-size:.65rem;flex-shrink:0">💬</div>
+      <div style="min-width:0">
+        <div class="s-hist-title" title="${c.title.replace(/"/g,'&quot;')}">${c.title.replace(/</g,'&lt;')}</div>
+        <div class="s-hist-time">${c.ts}</div>
+      </div>
+    </div>`).join('');
+}
+
+function restoreConversation(id){
+  if(streaming) return;
+  saveCurrentConversation();
+  const conv = getLocalConvs().find(c => c.id === id);
+  if(!conv) return;
+
+  currentConvId = conv.id;
+  history = conv.history || conv.messages.map(m => ({role:m.role, content:m.content}));
+  currentMessages = conv.messages || [];
+
+  const msgs = document.getElementById('messages');
+  msgs.innerHTML = '';
+  document.getElementById('art-bar')?.remove();
+  document.getElementById('email-draft')?.remove();
+
+  conv.messages.forEach(m => {
+    if(m.role === 'user')      renderHistoricUser({...m, platform:'web'});
+    else if(m.role === 'assistant') renderHistoricAI({...m, platform:'web'});
+  });
+
+  const t = conv.title.length > 32 ? conv.title.slice(0,32)+'…' : conv.title;
+  document.getElementById('sessionTitle').textContent = t;
+  document.getElementById('sessionTime').textContent = conv.ts;
+  msgs.scrollTop = msgs.scrollHeight;
+  renderSidebarHistory();
+}
 
 const COMMANDS = [
   {group:'Flujo de proyecto', items:[
@@ -447,7 +530,10 @@ document.addEventListener('click', e => {
 });
 
 function newChat(){
+  saveCurrentConversation();
+  currentConvId = 'web-' + crypto.randomUUID();
   history = [];
+  currentMessages = [];
   document.getElementById('messages').innerHTML = `
     <div class="empty-state" id="emptyState">
       <h2>Sistema Multiagente Arauco</h2>
@@ -455,6 +541,7 @@ function newChat(){
     </div>`;
   document.getElementById('sessionTitle').textContent = 'Nueva conversación';
   document.getElementById('sessionTime').textContent = 'Ahora';
+  renderSidebarHistory();
 }
 
 function renderMd(text){
@@ -669,12 +756,14 @@ async function send(){
   appendUser(text);
   appendTyping();
 
+  const msgTs = now();
   history.push({role:'user', content:text});
+  currentMessages.push({role:'user', content:text, ts:msgTs});
 
   if(history.length === 1){
     const title = text.length > 32 ? text.substring(0,32)+'…' : text;
     document.getElementById('sessionTitle').textContent = title;
-    document.getElementById('sessionTime').textContent = now();
+    document.getElementById('sessionTime').textContent = msgTs;
   }
 
   let fullText = '';
@@ -728,6 +817,7 @@ async function send(){
     }
 
     history.push({role:'assistant', content:fullText});
+    currentMessages.push({role:'assistant', content:fullText, ts:now()});
     showArtBar();
 
   } catch(e){
@@ -754,6 +844,7 @@ async function send(){
 
 // Carga historial al abrir
 loadHistory();
+renderSidebarHistory();
 </script>
 </body>
 </html>
