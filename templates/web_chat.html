@@ -256,9 +256,13 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
       <input type="file" id="fileInput" style="display:none" multiple
         accept="image/*,.pdf,.xlsx,.xls,.docx,.pptx,.txt,.md,.csv,.json"
         onchange="handleFileSelect(this)">
+      <input type="file" id="ragFileInput" style="display:none" multiple
+        accept=".pdf,.xlsx,.xls,.docx,.pptx,.txt,.md,.csv"
+        onchange="ragUploadFiles(this)">
       <div class="input-box">
         <button class="slash-btn" id="slashBtn" onclick="togglePalette()" title="Comandos">/</button>
         <button class="attach-btn" id="attachBtn" onclick="document.getElementById('fileInput').click()" title="Adjuntar archivo">📎</button>
+        <button class="attach-btn" id="ragUploadBtn" onclick="document.getElementById('ragFileInput').click()" title="Subir a base RAG">📚</button>
         <button class="notas-btn" id="notasBtn" onclick="toggleNotasMode()" title="Modo notas">📝</button>
         <textarea id="input" placeholder="Escribe o usa / para comandos..."
           rows="1"
@@ -1078,6 +1082,45 @@ function limpiarNotas(){
   webNotas = [];
   document.querySelectorAll('.nota-card').forEach(el=>el.remove());
   document.getElementById('notas-count').textContent = '0 notas';
+}
+
+// ── RAG upload directo desde toolbar ─────────────────────────────────────────
+
+async function ragUploadFiles(input){
+  const files = Array.from(input.files);
+  if(!files.length) return;
+  input.value = '';
+
+  const btn = document.getElementById('ragUploadBtn');
+  btn.textContent = '⏳';
+  btn.disabled = true;
+
+  let ok = 0, fail = 0;
+  for(const file of files){
+    const fd = new FormData();
+    fd.append('file', file);
+    try {
+      const resp = await fetch('/api/rag/index', {method:'POST', body: fd});
+      const data = await resp.json();
+      if(data.error){ fail++; console.warn('RAG index error:', file.name, data.error); }
+      else ok++;
+    } catch(e){ fail++; }
+  }
+
+  btn.textContent = '📚';
+  btn.disabled = false;
+
+  const msg = ok > 0
+    ? `✅ ${ok} archivo${ok>1?'s':''} indexado${ok>1?'s':''} en RAG${fail>0?' · ⚠️ '+fail+' fallaron':''}`
+    : `⚠️ ${fail} archivo${fail>1?'s':''} fallaron al indexar`;
+
+  const notice = document.createElement('div');
+  notice.className = 'msg ai';
+  notice.style.cssText = 'font-size:.82rem;opacity:.85;padding:6px 12px;';
+  notice.textContent = msg;
+  document.getElementById('messages').appendChild(notice);
+  notice.scrollIntoView({behavior:'smooth'});
+  setTimeout(() => notice.remove(), 6000);
 }
 
 // ── RAG panel ────────────────────────────────────────────────────────────────
