@@ -65,8 +65,12 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .bubble th{background:#696158;color:#fff;padding:6px 9px;text-align:left;font-size:.72rem;font-weight:700;text-transform:uppercase}
 .bubble td{padding:6px 9px;border-bottom:1px solid #eee}
 .bubble tr:nth-child(even) td{background:#f9f7f5}
-.bubble h3{font-size:.9rem;color:#696158;margin:10px 0 4px;font-weight:700}
+.bubble h1{font-size:1.05rem;color:#4a4035;margin:12px 0 6px;font-weight:800;border-bottom:2px solid #BFB800;padding-bottom:3px}
+.bubble h2{font-size:.95rem;color:#696158;margin:10px 0 4px;font-weight:700;border-bottom:1px solid #e0dbd4;padding-bottom:2px}
+.bubble h3{font-size:.88rem;color:#696158;margin:8px 0 3px;font-weight:700}
 .bubble p{margin:4px 0}
+.bubble ol{padding-left:18px;margin:6px 0}
+.bubble ol li{margin:3px 0}
 .agent-tag{display:inline-block;font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
 .tag-orq{background:#696158;color:#fff}
 .msg-time{font-size:.62rem;color:#ccc}
@@ -687,20 +691,85 @@ function newChat(){
   renderSidebarHistory();
 }
 
-function renderMd(text){
-  return text
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    .replace(/```(\w*)\n?([\s\S]*?)```/g, (_,lang,code) =>
-      `<pre><code>${code.trim()}</code></pre>`)
+function _mdInline(t){
+  return t
     .replace(/`([^`]+)`/g,'<code>$1</code>')
     .replace(/\*\*([^*]+)\*\*/g,'<strong>$1</strong>')
-    .replace(/\*([^*]+)\*/g,'<em>$1</em>')
-    .replace(/^### (.+)$/gm,'<h3>$1</h3>')
-    .replace(/^## (.+)$/gm,'<h3>$1</h3>')
-    .replace(/^- (.+)$/gm,'<li>$1</li>')
-    .replace(/(<li>.*<\/li>\n?)+/g, m => `<ul>${m}</ul>`)
-    .replace(/\n{2,}/g,'</p><p>')
-    .replace(/\n/g,'<br>');
+    .replace(/__([^_]+)__/g,'<strong>$1</strong>')
+    .replace(/\*([^*\n]+)\*/g,'<em>$1</em>')
+    .replace(/_([^_\n]+)_/g,'<em>$1</em>');
+}
+
+function _mdTable(lines){
+  const isSep = l => /^\|[\s\-:|]+\|$/.test(l.trim());
+  const rows  = lines.filter(l => !isSep(l));
+  if(!rows.length) return '';
+  const parseRow = l => l.trim().replace(/^\||\|$/g,'').split('|').map(c => c.trim());
+  const [head, ...body] = rows;
+  const ths = parseRow(head).map(h => `<th>${_mdInline(h)}</th>`).join('');
+  const trs = body.map(r => '<tr>' + parseRow(r).map(c => `<td>${_mdInline(c)}</td>`).join('') + '</tr>').join('');
+  return `<table><thead><tr>${ths}</tr></thead><tbody>${trs}</tbody></table>`;
+}
+
+function renderMd(raw){
+  // escape HTML
+  let text = raw.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const lines = text.split('\n');
+  const out   = [];
+  let i = 0;
+
+  while(i < lines.length){
+    const l = lines[i];
+
+    // fenced code block
+    if(l.startsWith('```')){
+      let code = '';
+      i++;
+      while(i < lines.length && !lines[i].startsWith('```')){ code += lines[i]+'\n'; i++; }
+      out.push(`<pre><code>${code.trim()}</code></pre>`);
+      i++; continue;
+    }
+
+    // table
+    if(l.trim().startsWith('|')){
+      const tbl = [];
+      while(i < lines.length && lines[i].trim().startsWith('|')){ tbl.push(lines[i]); i++; }
+      out.push(_mdTable(tbl)); continue;
+    }
+
+    // headings
+    if(l.startsWith('# '))  { out.push(`<h1>${_mdInline(l.slice(2).trim())}</h1>`);  i++; continue; }
+    if(l.startsWith('## ')) { out.push(`<h2>${_mdInline(l.slice(3).trim())}</h2>`);  i++; continue; }
+    if(l.startsWith('### ')){ out.push(`<h3>${_mdInline(l.slice(4).trim())}</h3>`);  i++; continue; }
+
+    // ordered list
+    if(/^\d+\.\s/.test(l)){
+      const items = [];
+      while(i < lines.length && /^\d+\.\s/.test(lines[i])){
+        items.push(`<li>${_mdInline(lines[i].replace(/^\d+\.\s/,''))}</li>`);
+        i++;
+      }
+      out.push(`<ol>${items.join('')}</ol>`); continue;
+    }
+
+    // unordered list (handle indented continuation)
+    if(/^[-*]\s/.test(l)){
+      const items = [];
+      while(i < lines.length && /^[-*]\s/.test(lines[i])){
+        items.push(`<li>${_mdInline(lines[i].slice(2))}</li>`);
+        i++;
+      }
+      out.push(`<ul>${items.join('')}</ul>`); continue;
+    }
+
+    // blank line
+    if(l.trim() === ''){ out.push('<br>'); i++; continue; }
+
+    // paragraph
+    out.push(`<p>${_mdInline(l)}</p>`);
+    i++;
+  }
+  return out.join('');
 }
 
 function showEmailDraft(d){
