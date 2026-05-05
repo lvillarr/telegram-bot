@@ -218,7 +218,7 @@ async def web_api_artifact(request: Request):
     description = body.get("description_override") or \
                   "\n\n".join(pairs) or "Genera un artefacto basado en la conversación."
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 8000}
 
     try:
         # Planner — HTML estático, sin llamada a Claude
