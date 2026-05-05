@@ -163,6 +163,7 @@ async def web_api_chat(request: Request):
         stream_kwargs = dict(
             model=model,
             max_tokens=8192,
+            temperature=0,
             system=_cached_system(SYSTEM_PROMPT + rag_ctx),
             messages=msgs,
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
@@ -780,7 +781,15 @@ REGLAS_GENERALES = """
 Ante cualquier pregunta sobre cifras, KPIs, pérdidas, productividad o análisis:
 - Los números deben provenir del documento, imagen o contexto recibido — nunca de suposición o memoria.
 - Indica siempre la fuente del dato (archivo, hoja, sistema).
-- Si no tienes los datos, dilo explícitamente e indica qué fuente se necesita.
+- Si no tienes los datos, responde exactamente: **"No tengo datos suficientes para responder esto. Fuente necesaria: [nombre del sistema/archivo]."** No especules ni uses rangos típicos como respuesta.
+
+### Regla de incertidumbre — OBLIGATORIA
+Cuando no tengas certeza sobre un dato, hecho o resultado:
+1. **No respondas de forma ambigua** ("podría ser", "generalmente", "típicamente", "suele ser").
+2. **Di exactamente qué sabes y qué no sabes**, separado.
+3. **Indica la acción concreta** para obtener la información faltante.
+Ejemplo correcto: "El OEE de esta cosechadora no está en el contexto recibido. Para obtenerlo: exportar desde Historian el rango de fechas requerido."
+Ejemplo incorrecto: "El OEE generalmente está entre 70-85% en equipos similares."
 
 ### Artefactos visuales — regla crítica
 **NUNCA generes código HTML, CSS, JavaScript, Excel, PDF, PowerPoint ni código de gráficos en tus respuestas de chat.** Si el usuario pide un dashboard, gráfico, tabla Excel, informe, presentación o cualquier archivo visual, responde con un análisis en texto e indícale que puede generarlo usando el botón correspondiente (📊 Excel, 🖥️ PPT, 📄 PDF, 📅 Gantt, 🌐 HTML). Los artefactos los genera un sistema especializado, no tú directamente.
@@ -1064,6 +1073,7 @@ def claude_response(system: str, user_msg: str, max_tokens: int = 512,
     kwargs = dict(
         model=model,
         max_tokens=max_tokens,
+        temperature=0,
         system=_cached_system(system),
         messages=messages,
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
