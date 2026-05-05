@@ -993,6 +993,7 @@ async function send(){
 
     history.push({role:'assistant', content:fullText});
     currentMessages.push({role:'assistant', content:fullText, ts:now()});
+    saveCurrentConversation();
     showArtBar();
 
   } catch(e){
