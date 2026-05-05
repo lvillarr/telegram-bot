@@ -557,19 +557,35 @@ function appendAI(text){
   const typing = document.getElementById('typing-indicator');
   if(typing) typing.remove();
 
+  // Remove IDs from previous streaming divs — getElementById returns the first match,
+  // so stale IDs from prior responses cause updates to go to the wrong bubble.
+  document.getElementById('ai-streaming')?.removeAttribute('id');
+  document.getElementById('ai-bubble')?.removeAttribute('id');
+
   const msgs = document.getElementById('messages');
   const d = document.createElement('div');
   d.className = 'msg ai';
   d.id = 'ai-streaming';
-  d.innerHTML = `
-    <div class="avatar av-ai">MC</div>
-    <div class="msg-body">
-      <div class="msg-meta">Sistema · ${now()}</div>
-      <div class="bubble" id="ai-bubble"><span class="agent-tag tag-orq">Orquestador</span><br>${renderMd(text)}</div>
-    </div>`;
+
+  const bubble = document.createElement('div');
+  bubble.id = 'ai-bubble';
+  bubble.className = 'bubble';
+  bubble.innerHTML = `<span class="agent-tag tag-orq">Orquestador</span><br>${renderMd(text)}`;
+
+  const body = document.createElement('div');
+  body.className = 'msg-body';
+  body.innerHTML = `<div class="msg-meta">Sistema · ${now()}</div>`;
+  body.appendChild(bubble);
+
+  const av = document.createElement('div');
+  av.className = 'avatar av-ai';
+  av.textContent = 'MC';
+
+  d.appendChild(av);
+  d.appendChild(body);
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
-  return document.getElementById('ai-bubble');
+  return bubble; // referencia directa, no getElementById
 }
 
 async function send(){
