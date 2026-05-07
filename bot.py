@@ -225,7 +225,7 @@ async def web_api_artifact(request: Request):
     description = body.get("description_override") or \
                   "\n\n".join(pairs) or "Genera un artefacto basado en la conversación."
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 8000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 32000}
 
     try:
         # Planner — HTML estático, sin llamada a Claude
@@ -1169,12 +1169,13 @@ NOTAS_KEYBOARD = InlineKeyboardMarkup([[
 
 NOTAS_POST_KEYBOARD = InlineKeyboardMarkup([[
     InlineKeyboardButton("✏️ Editar",            callback_data="notas_editar"),
+    InlineKeyboardButton("📋 Ver en Telegram",   callback_data="notas_ver_tg"),
+], [
     InlineKeyboardButton("📄 → PDF",             callback_data="notas_pdf"),
-], [
     InlineKeyboardButton("📓 → Word (OneNote)",  callback_data="notas_docx"),
-    InlineKeyboardButton("🗑 Borrar notas",       callback_data="notas_clear"),
 ], [
-    InlineKeyboardButton("✅ Salir del modo notas", callback_data="notas_salir"),
+    InlineKeyboardButton("🗑 Borrar notas",       callback_data="notas_clear"),
+    InlineKeyboardButton("✅ Salir",              callback_data="notas_salir"),
 ]])
 
 IMAGE_PENDING_KEYBOARD = InlineKeyboardMarkup([[
@@ -1424,7 +1425,7 @@ async def _render_artifact(artifact_type: str, description: str,
         )
         return
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 8000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 32000}
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     raw = claude_response(prompt, description,
                           max_tokens=_tokens_map.get(artifact_type, 4000),
@@ -1441,9 +1442,19 @@ async def _render_artifact(artifact_type: str, description: str,
             if not html.lower().startswith("<!doctype") and "<html" not in html.lower():
                 await reply_fn("⚠️ El HTML generado está incompleto. Intenta de nuevo.")
                 return
+            if artifact_type == "notas_onenote":
+                # Reemplazar placeholders de foto con data URIs reales
+                notas_data = context.user_data.get("last_notas_data") or context.user_data.get("notas", [])
+                for nota in notas_data:
+                    if nota.get("foto_b64"):
+                        placeholder = f"NOTA_FOTO_{nota['n']}"
+                        mime = nota.get("foto_mime", "image/jpeg")
+                        data_uri = f"data:{mime};base64,{nota['foto_b64']}"
+                        html = html.replace(f'src="{placeholder}"', f'src="{data_uri}"')
+                        html = html.replace(f"src='{placeholder}'", f'src="{data_uri}"')
+                context.user_data["last_notas_data"] = notas_data
             url = store_html(html)
             if artifact_type == "notas_onenote":
-                context.user_data["last_notas_data"] = context.user_data.get("notas", [])
                 await reply_fn(f"📓 <b>Documento listo</b>\n\nToca el enlace para abrirlo:\n{url}",
                                parse_mode="HTML", reply_markup=NOTAS_POST_KEYBOARD)
             else:
@@ -1657,6 +1668,23 @@ async def handle_image(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     image_b64 = base64.standard_b64encode(file_bytes).decode("utf-8")
     caption = update.message.caption or ""
+
+    # ── Modo notas: guardar foto como parte de la nota ─────────────────────
+    if context.user_data.get("modo_notas"):
+        notas = context.user_data.get("notas", [])
+        nota_texto = caption if caption else "(foto sin descripción)"
+        notas.append({
+            "texto": nota_texto,
+            "fecha": datetime.now().strftime("%d/%m %H:%M"),
+            "n": len(notas) + 1,
+            "foto_b64": image_b64,
+            "foto_mime": "image/jpeg",
+        })
+        context.user_data["notas"] = notas
+        await update.message.reply_text(
+            _notas_status_text(notas), parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD
+        )
+        return
 
     images = context.user_data.get("pending_images", [])
     images.append({"b64": image_b64, "media_type": "image/jpeg", "caption": caption})
@@ -1875,12 +1903,16 @@ async def image_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 def _notas_status_text(notas: list) -> str:
     if not notas:
-        return "📝 *Modo notas* — escribe o envía un audio."
+        return "📝 *Modo notas* — escribe, envía un audio o una foto."
     n = len(notas)
-    preview = notas[-1]["texto"][:60] + ("…" if len(notas[-1]["texto"]) > 60 else "")
-    return (f"📝 *Nota {n} guardada*\n"
+    ultima = notas[-1]
+    tiene_foto = ultima.get("foto_b64") is not None
+    icono = "🖼" if tiene_foto else "📝"
+    preview = ultima["texto"][:60] + ("…" if len(ultima["texto"]) > 60 else "")
+    foto_tag = " [+foto]" if tiene_foto else ""
+    return (f"{icono} *Nota {n} guardada{foto_tag}*\n"
             f"_{preview}_\n\n"
-            f"Modo notas activo — escribe o envía un audio.")
+            f"Modo notas activo — escribe, envía un audio o una foto.")
 
 
 async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1892,7 +1924,7 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         notas = context.user_data.get("notas", [])
         n = len(notas)
         msg = ("📝 *Modo notas activado*\n\n"
-               "Escribe lo que quieras anotar o envía un audio — "
+               "Escribe, envía un audio o una foto — "
                "todo se guardará como nota.\n\n"
                f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}")
         try:
@@ -1972,6 +2004,30 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                            caption="📓 Notas en Word — importa este archivo en OneNote")
         return
 
+    if query.data == "notas_ver_tg":
+        notas = context.user_data.get("last_notas_data") or context.user_data.get("notas", [])
+        if not notas:
+            await query.answer("No hay notas guardadas.", show_alert=True)
+            return
+        await query.message.reply_text(
+            f"*Notas consolidadas — {len(notas)} nota(s)*", parse_mode="Markdown"
+        )
+        for n in notas:
+            icono = "🖼" if n.get("foto_b64") else "📝"
+            texto = f"{icono} *Nota {n['n']} — {n['fecha']}*\n{n['texto']}"
+            if n.get("foto_b64"):
+                img_bytes = base64.standard_b64decode(n["foto_b64"])
+                # Telegram limita captions a 1024 chars
+                caption_txt = texto[:1020] + "…" if len(texto) > 1024 else texto
+                await query.message.reply_photo(
+                    photo=io.BytesIO(img_bytes),
+                    caption=caption_txt,
+                    parse_mode="Markdown",
+                )
+            else:
+                await query.message.reply_text(texto, parse_mode="Markdown")
+        return
+
     if query.data != "notas_join":
         await query.answer("Acción no reconocida.", show_alert=True)
         return
@@ -1985,8 +2041,15 @@ async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_reply_markup(reply_markup=None)
     await query.message.reply_text(f"⏳ Organizando *{len(notas)} notas* en documento OneNote...", parse_mode="Markdown")
 
-    notas_txt = "\n\n".join([f"[Nota {n['n']} — {n['fecha']}]\n{n['texto']}" for n in notas])
+    partes = []
+    for n in notas:
+        parte = f"[Nota {n['n']} — {n['fecha']}]\n{n['texto']}"
+        if n.get("foto_b64"):
+            parte += f"\n[tiene foto adjunta — placeholder: NOTA_FOTO_{n['n']}]"
+        partes.append(parte)
+    notas_txt = "\n\n".join(partes)
     context.user_data["last_notas_txt"] = notas_txt
+    context.user_data["last_notas_data"] = notas
     description = f"{len(notas)} notas para organizar:\n\n{notas_txt}"
 
     await _render_artifact("notas_onenote", description, _make_reply_fn(query.message), context)
@@ -2072,9 +2135,15 @@ ARTIFACT_PROMPTS = {
     "notas_onenote": """Eres un asistente que organiza notas en un documento HTML estilo OneNote, responsive para desktop Y mobile.
 
 El usuario te entrega N notas en texto libre. Tu tarea:
-1. Leer todas las notas y detectar temas en común
-2. Agrupar las notas por tema (si hay temas claros) o mantenerlas cronológicas
+1. Leer TODAS las notas — cada una debe aparecer completa en el HTML final
+2. Detectar temas en común y agrupar las notas por tema (o mantener orden cronológico si no hay temas claros)
 3. Generar un HTML completo, autocontenido y 100% responsive
+
+REGLA CRÍTICA — SIN EXCEPCIONES:
+- TODAS las notas del input deben aparecer en el HTML, sin omitir ni resumir ninguna
+- Cada nota debe mostrarse con su texto ÍNTEGRO, tal como fue entregada
+- Si hay 10 notas en el input, deben verse 10 notas en el HTML
+- NO condensar, NO parafrasear, NO omitir notas "similares"
 
 ESTRUCTURA HTML obligatoria:
 - <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -2096,8 +2165,9 @@ MOBILE (max-width: 767px):
 
 CONTENIDO de cada sección:
 - Título de sección: negrita, borde izquierdo 3px con color único por sección
-- Cada nota: timestamp pequeño arriba en gris, texto en párrafo, separador sutil entre notas
-- Sección final "⚠️ Pendientes" si hay tareas o acciones detectadas en el texto
+- Cada nota: timestamp pequeño arriba en gris, texto COMPLETO en párrafo, separador sutil entre notas
+- Si una nota dice "[tiene foto adjunta — placeholder: NOTA_FOTO_N]", incluye EXACTAMENTE este tag HTML (sin modificar el src) justo después del timestamp: <img src="NOTA_FOTO_N" style="max-width:100%;border-radius:8px;margin:8px 0;display:block"> donde N es el número de nota
+- Sección final "Pendientes" si hay tareas o acciones detectadas en el texto
 
 BOTÓN COPIAR (ambas versiones):
 - Copia texto plano con estructura: título, secciones, notas y timestamps
@@ -2868,50 +2938,196 @@ def build_pdf_imagenes(data: dict, images: list) -> io.BytesIO:
     return buf
 
 
+def _sanitize_pdf_text(text: str) -> str:
+    """Filtra caracteres fuera de Latin-1 que causan recuadros negros en ReportLab/Helvetica."""
+    import unicodedata
+    result = []
+    for ch in text:
+        try:
+            ch.encode('latin-1')
+            result.append(ch)
+        except (UnicodeEncodeError, UnicodeDecodeError):
+            nfkd = unicodedata.normalize('NFKD', ch)
+            ascii_fallback = nfkd.encode('ascii', 'ignore').decode('ascii')
+            result.append(ascii_fallback if ascii_fallback else ' ')
+    return ''.join(result)
+
+
 def build_notas_pdf(notas: list, titulo: str = "Notas") -> io.BytesIO:
-    """PDF directo desde lista de notas — sin llamada a Claude."""
+    """PDF con branding Arauco, markdown renderizado y jerarquía visual por nota."""
     from reportlab.lib.pagesizes import A4
     from reportlab.lib import colors
     from reportlab.lib.units import mm
     from reportlab.lib.styles import ParagraphStyle
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, HRFlowable
-    from reportlab.lib.enums import TA_JUSTIFY
+    from reportlab.platypus import (SimpleDocTemplate, Paragraph, Spacer,
+                                    HRFlowable, Image as RLImage, Table, TableStyle)
+    from reportlab.lib.enums import TA_LEFT, TA_JUSTIFY, TA_CENTER
 
-    GRIS   = colors.HexColor("#696158")
-    NEGRO  = colors.HexColor("#222222")
-    GRIS_L = colors.HexColor("#999999")
-    SEP    = colors.HexColor("#DDDDDD")
+    # ── Arauco brand colors ────────────────────────────────────────────────
+    GRIS    = colors.HexColor("#696158")
+    VERDE   = colors.HexColor("#BFB800")
+    NARANJA = colors.HexColor("#EA7600")
+    CREMA   = colors.HexColor("#DFD1A7")
+    NEGRO   = colors.HexColor("#222222")
+    GRIS_L  = colors.HexColor("#888888")
+    BLANCO  = colors.white
+    NOTE_COLORS = [VERDE, NARANJA, GRIS]
+
+    page_w, _ = A4
+    margin = 18 * mm
+    cw = page_w - 2 * margin        # content width in points
+    BORDER = 3 * mm                 # left-border strip width
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=A4,
-                            leftMargin=20*mm, rightMargin=20*mm,
-                            topMargin=18*mm, bottomMargin=18*mm,
+                            leftMargin=margin, rightMargin=margin,
+                            topMargin=margin, bottomMargin=margin,
                             title=titulo)
 
-    s_titulo = ParagraphStyle("titulo", fontName="Helvetica-Bold", fontSize=16,
-                               textColor=GRIS, leading=22, spaceAfter=3*mm)
-    s_meta   = ParagraphStyle("meta",   fontName="Helvetica", fontSize=8,
-                               textColor=GRIS_L, spaceAfter=5*mm)
-    s_ts     = ParagraphStyle("ts",     fontName="Helvetica", fontSize=8,
-                               textColor=GRIS_L, spaceAfter=1*mm)
-    s_body   = ParagraphStyle("body",   fontName="Helvetica", fontSize=9,
-                               textColor=NEGRO, leading=14, alignment=TA_JUSTIFY,
-                               spaceAfter=4*mm)
+    # ── Styles ────────────────────────────────────────────────────────────
+    def _ps(name, **kw):
+        return ParagraphStyle(name, **kw)
+
+    s_hdr_tit = _ps("hdr_tit", fontName="Helvetica-Bold", fontSize=16,
+                    textColor=BLANCO, leading=22, spaceAfter=0)
+    s_hdr_sub = _ps("hdr_sub", fontName="Helvetica", fontSize=8,
+                    textColor=colors.HexColor("#CCCCCC"), leading=11, spaceAfter=0)
+    s_nota_hdr = _ps("nota_hdr", fontName="Helvetica-Bold", fontSize=8,
+                     textColor=BLANCO, leading=12)
+    s_h1   = _ps("h1",    fontName="Helvetica-Bold", fontSize=12, textColor=GRIS,
+                 leading=16, spaceBefore=3*mm, spaceAfter=1*mm, alignment=TA_LEFT)
+    s_h2   = _ps("h2",    fontName="Helvetica-Bold", fontSize=10, textColor=GRIS,
+                 leading=14, spaceBefore=2*mm, spaceAfter=1*mm, alignment=TA_LEFT)
+    s_body = _ps("body",  fontName="Helvetica", fontSize=9, textColor=NEGRO,
+                 leading=14, alignment=TA_JUSTIFY, spaceAfter=1*mm)
+    s_bull = _ps("bull",  fontName="Helvetica", fontSize=9, textColor=NEGRO,
+                 leading=13, leftIndent=5*mm, spaceAfter=0.5*mm, alignment=TA_LEFT)
+    s_foot = _ps("foot",  fontName="Helvetica", fontSize=7, textColor=GRIS_L,
+                 alignment=TA_CENTER)
+
+    # ── Markdown → ReportLab paragraphs ──────────────────────────────────
+    def _rl_text(raw: str) -> str:
+        """Sanitize + escape HTML + apply **bold** and *italic*."""
+        clean = _sanitize_pdf_text(raw)
+        esc = clean.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        esc = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', esc)
+        esc = re.sub(r'\*([^*\n]+?)\*', r'<i>\1</i>', esc)
+        return esc
+
+    def _parse_md(text: str) -> list:
+        """Split note text into list of (ParagraphStyle, rl_text) tuples."""
+        items = []
+        for line in text.split('\n'):
+            clean = _sanitize_pdf_text(line).strip()
+            if not clean:
+                continue
+            esc = _rl_text(clean)
+            if clean.startswith('### '):
+                items.append((s_h2, _rl_text(clean[4:])))
+            elif clean.startswith('## '):
+                items.append((s_h2, _rl_text(clean[3:])))
+            elif clean.startswith('# '):
+                items.append((s_h1, _rl_text(clean[2:])))
+            elif re.match(r'^[-*+•]\s', clean):
+                items.append((s_bull, '• ' + esc[2:]))
+            elif re.match(r'^\d+\.\s', clean):
+                items.append((s_bull, esc))
+            else:
+                items.append((s_body, esc))
+        return items or [(s_body, ' ')]
 
     story = []
-    story.append(Paragraph(titulo, s_titulo))
-    story.append(Paragraph(
-        f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')} &nbsp;|&nbsp; "
-        f"{len(notas)} nota(s) &nbsp;|&nbsp; Arauco — Mejora Continua",
-        s_meta
-    ))
-    story.append(HRFlowable(width="100%", thickness=2, color=GRIS, spaceAfter=5*mm))
 
-    for n in notas:
-        story.append(Paragraph(f"Nota {n['n']} — {n['fecha']}", s_ts))
-        body_text = n['texto'].replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-        story.append(Paragraph(body_text, s_body))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=SEP, spaceAfter=3*mm))
+    # ── Document header ───────────────────────────────────────────────────
+    titulo_clean = _sanitize_pdf_text(titulo)
+    meta_text = (f"Generado: {datetime.now().strftime('%d/%m/%Y %H:%M')}  |  "
+                 f"{len(notas)} nota(s)  |  Arauco — Mejora Continua")
+
+    # Try Arauco logo (graceful fallback if no network)
+    logo_row = None
+    try:
+        import urllib.request as _urlreq
+        _logo_bytes = _urlreq.urlopen(
+            "https://arauco.com/chile/wp-content/themes/arauco/assets/img/logo-arauco-blanco.png",
+            timeout=3
+        ).read()
+        logo_img = RLImage(io.BytesIO(_logo_bytes), width=38*mm, height=13*mm, kind='proportional')
+        logo_row = [logo_img]
+    except Exception:
+        pass
+
+    hdr_rows = []
+    if logo_row:
+        hdr_rows.append(logo_row)
+    hdr_rows.append([Paragraph(titulo_clean, s_hdr_tit)])
+    hdr_rows.append([Paragraph(meta_text, s_hdr_sub)])
+
+    hdr_table = Table(hdr_rows, colWidths=[cw])
+    hdr_table.setStyle(TableStyle([
+        ('BACKGROUND',    (0, 0), (-1, -1), GRIS),
+        ('LEFTPADDING',   (0, 0), (-1, -1), 8*mm),
+        ('RIGHTPADDING',  (0, 0), (-1, -1), 6*mm),
+        ('TOPPADDING',    (0, 0), (0, 0),   5*mm),
+        ('BOTTOMPADDING', (0,-1), (-1,-1),  5*mm),
+        ('TOPPADDING',    (0, 1), (-1,-1),  1*mm),
+        ('BOTTOMPADDING', (0, 0), (-1,-2),  1*mm),
+        ('VALIGN',        (0, 0), (-1,-1),  'MIDDLE'),
+    ]))
+    story.append(hdr_table)
+    story.append(Spacer(1, 5*mm))
+
+    # ── Notes ─────────────────────────────────────────────────────────────
+    for idx, n in enumerate(notas):
+        nc = NOTE_COLORS[idx % len(NOTE_COLORS)]
+        nota_ts = _sanitize_pdf_text(f"Nota {n['n']}  |  {n['fecha']}")
+
+        # Note header band
+        nh = Table([[Paragraph(nota_ts, s_nota_hdr)]], colWidths=[cw])
+        nh.setStyle(TableStyle([
+            ('BACKGROUND',    (0, 0), (-1,-1), nc),
+            ('LEFTPADDING',   (0, 0), (-1,-1), 4*mm),
+            ('TOPPADDING',    (0, 0), (-1,-1), 2*mm),
+            ('BOTTOMPADDING', (0, 0), (-1,-1), 2*mm),
+        ]))
+        story.append(nh)
+
+        # Note body: 2-col table — col0=colored border strip, col1=content
+        body_rows = []
+        for sty, txt in _parse_md(n['texto']):
+            body_rows.append(['', Paragraph(txt, sty)])
+
+        if n.get("foto_b64"):
+            img_data = base64.standard_b64decode(n["foto_b64"])
+            max_w = cw - BORDER - 6*mm
+            foto = RLImage(io.BytesIO(img_data), width=max_w, height=max_w * 0.75, kind="proportional")
+            body_rows.append(['', foto])
+            body_rows.append(['', Spacer(1, 2*mm)])
+
+        body_t = Table(body_rows, colWidths=[BORDER, cw - BORDER])
+        body_t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (0, -1), nc),
+            ('BACKGROUND', (1, 0), (1, -1), BLANCO),
+            ('LEFTPADDING',   (0, 0), (0, -1), 0),
+            ('RIGHTPADDING',  (0, 0), (0, -1), 0),
+            ('TOPPADDING',    (0, 0), (0, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (0, -1), 0),
+            ('LEFTPADDING',   (1, 0), (1, -1), 4*mm),
+            ('RIGHTPADDING',  (1, 0), (1, -1), 2*mm),
+            ('TOPPADDING',    (1, 0), (1,  0), 3*mm),
+            ('BOTTOMPADDING', (1,-1), (1, -1), 3*mm),
+            ('TOPPADDING',    (1, 1), (1, -1), 1*mm),
+            ('BOTTOMPADDING', (1, 0), (1, -2), 1*mm),
+            ('VALIGN',        (0, 0), (-1,-1), 'TOP'),
+        ]))
+        story.append(body_t)
+        story.append(Spacer(1, 4*mm))
+
+    # ── Footer ────────────────────────────────────────────────────────────
+    story.append(HRFlowable(width="100%", thickness=0.5, color=CREMA, spaceAfter=2*mm))
+    story.append(Paragraph(
+        f"Arauco — Mejora Continua  |  {datetime.now().strftime('%d/%m/%Y')}",
+        s_foot
+    ))
 
     doc.build(story)
     buf.seek(0)
@@ -2932,6 +3148,11 @@ def build_notas_docx(notas: list, titulo: str = "Notas") -> io.BytesIO:
     for n in notas:
         doc.add_heading(f"Nota {n['n']} — {n['fecha']}", level=2)
         doc.add_paragraph(n['texto'])
+        if n.get("foto_b64"):
+            from docx.shared import Inches
+            img_bytes = base64.standard_b64decode(n["foto_b64"])
+            img_buf = io.BytesIO(img_bytes)
+            doc.add_picture(img_buf, width=Inches(5))
         doc.add_paragraph("")
 
     buf = io.BytesIO()
