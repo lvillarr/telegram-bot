@@ -1428,14 +1428,15 @@ async def _render_artifact(artifact_type: str, description: str,
     _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 32000}
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     loop = asyncio.get_event_loop()
-    raw = await loop.run_in_executor(
-        None,
-        lambda: claude_response(prompt, description,
-                                max_tokens=_tokens_map.get(artifact_type, 4000),
-                                model="claude-sonnet-4-6",
-                                effort="high"),
-    )
+    raw = ""
     try:
+        raw = await loop.run_in_executor(
+            None,
+            lambda: claude_response(prompt, description,
+                                    max_tokens=_tokens_map.get(artifact_type, 4000),
+                                    model="claude-sonnet-4-6",
+                                    effort="high"),
+        )
         if artifact_type in ("html", "notas_onenote"):
             html = raw.strip()
             if html.startswith("```"):
