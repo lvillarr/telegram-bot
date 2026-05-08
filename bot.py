@@ -225,7 +225,8 @@ async def web_api_artifact(request: Request):
     description = body.get("description_override") or \
                   "\n\n".join(pairs) or "Genera un artefacto basado en la conversación."
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 32000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 12000}
+    _effort_map = {"notas_onenote": "low"}
 
     try:
         # Planner — HTML estático, sin llamada a Claude
@@ -252,7 +253,8 @@ async def web_api_artifact(request: Request):
             None,
             lambda: claude_response(prompt, description,
                                     max_tokens=_tokens_map.get(art_type, 4000),
-                                    model="claude-sonnet-4-6", effort="high"),
+                                    model="claude-sonnet-4-6",
+                                    effort=_effort_map.get(art_type, "high")),
         )
 
         if art_type == "html":
@@ -1425,7 +1427,8 @@ async def _render_artifact(artifact_type: str, description: str,
         )
         return
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 32000}
+    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 12000}
+    _effort_map = {"notas_onenote": "low"}
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     loop = asyncio.get_event_loop()
     raw = ""
@@ -1435,7 +1438,7 @@ async def _render_artifact(artifact_type: str, description: str,
             lambda: claude_response(prompt, description,
                                     max_tokens=_tokens_map.get(artifact_type, 4000),
                                     model="claude-sonnet-4-6",
-                                    effort="high"),
+                                    effort=_effort_map.get(artifact_type, "high")),
         )
         if artifact_type in ("html", "notas_onenote"):
             html = raw.strip()
