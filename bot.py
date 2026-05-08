@@ -1427,10 +1427,14 @@ async def _render_artifact(artifact_type: str, description: str,
 
     _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 32000}
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
-    raw = claude_response(prompt, description,
-                          max_tokens=_tokens_map.get(artifact_type, 4000),
-                          model="claude-sonnet-4-6",
-                          effort="high")
+    loop = asyncio.get_event_loop()
+    raw = await loop.run_in_executor(
+        None,
+        lambda: claude_response(prompt, description,
+                                max_tokens=_tokens_map.get(artifact_type, 4000),
+                                model="claude-sonnet-4-6",
+                                effort="high"),
+    )
     try:
         if artifact_type in ("html", "notas_onenote"):
             html = raw.strip()
@@ -1550,7 +1554,8 @@ async def _handle_nlm_query(update: Update, context: ContextTypes.DEFAULT_TYPE, 
     )
 
     try:
-        resp = claude_response(system, question, max_tokens=1200)
+        loop = asyncio.get_event_loop()
+        resp = await loop.run_in_executor(None, lambda: claude_response(system, question, max_tokens=1200))
         await update.message.reply_text(fmt(resp), parse_mode="HTML")
     except Exception as e:
         await update.message.reply_text(f"⚠️ Error: {_safe_err(e)}")
@@ -1645,7 +1650,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             rag_ctx = ""
         system     = SYSTEM_PROMPT + rag_ctx
-        reply = claude_response(system, user_msg, max_tokens=4096, model=get_model_for_msg(context, user_msg), history=history)
+        loop = asyncio.get_event_loop()
+        reply = await loop.run_in_executor(
+            None,
+            lambda: claude_response(system, user_msg, max_tokens=4096,
+                                    model=get_model_for_msg(context, user_msg), history=history),
+        )
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
         uid = str(update.effective_user.id)
@@ -2107,7 +2117,11 @@ async def skill_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     skill_system = SYSTEM_PROMPT + "\n\n" + SKILL_PROMPTS[command]
-    reply = claude_response(skill_system, args, max_tokens=4096, model=get_model(context))
+    loop = asyncio.get_event_loop()
+    reply = await loop.run_in_executor(
+        None,
+        lambda: claude_response(skill_system, args, max_tokens=4096, model=get_model(context)),
+    )
     await update.message.reply_text(fmt(reply), parse_mode="HTML")
 
 
@@ -3814,8 +3828,12 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             rag_ctx = ""
         system   = SYSTEM_PROMPT + rag_ctx
-        reply = claude_response(system, transcript, max_tokens=4096,
-                                model=get_model_for_msg(context, transcript), history=history)
+        loop = asyncio.get_event_loop()
+        reply = await loop.run_in_executor(
+            None,
+            lambda: claude_response(system, transcript, max_tokens=4096,
+                                    model=get_model_for_msg(context, transcript), history=history),
+        )
         push_history(context, transcript, reply)
         context.user_data["last_analysis"] = reply
 
@@ -3893,7 +3911,12 @@ async def handle_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"{content[:10000]}"
     )
     history  = context.user_data.get("history", [])
-    analysis = claude_response(SYSTEM_PROMPT, prompt, max_tokens=4096, model=get_model(context), history=history)
+    loop = asyncio.get_event_loop()
+    analysis = await loop.run_in_executor(
+        None,
+        lambda: claude_response(SYSTEM_PROMPT, prompt, max_tokens=4096,
+                                model=get_model(context), history=history),
+    )
     push_history(context, f"[Análisis de {tipo}: {doc.file_name}]", analysis)
     context.user_data["last_analysis"] = analysis
     # Guarda datos estructurados (Excel) y contenido raw (PDF/Word/Excel)
