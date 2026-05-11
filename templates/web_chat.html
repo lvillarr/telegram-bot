@@ -20,12 +20,15 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .main{display:flex;flex:1;overflow:hidden}
 
 .sidebar{width:220px;background:#fff;border-right:1px solid #e0dbd4;display:flex;flex-direction:column;flex-shrink:0;overflow-y:auto}
-.sidebar-hist-item{display:flex;align-items:center;gap:9px;padding:7px 14px;cursor:pointer;border-left:3px solid transparent;transition:background .12s}
+.sidebar-hist-item{display:flex;align-items:center;gap:9px;padding:7px 14px;cursor:pointer;border-left:3px solid transparent;transition:background .12s;position:relative}
 .sidebar-hist-item:hover{background:#f5f2ee}
 .sidebar-hist-item.active{background:#f5f2ee;border-left-color:#BFB800}
-.s-hist-title{font-size:.75rem;font-weight:700;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:140px}
+.s-hist-title{font-size:.75rem;font-weight:700;color:#444;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:120px}
 .s-hist-time{font-size:.64rem;color:#bbb}
 .no-hist{padding:6px 16px 10px;font-size:.7rem;color:#ccc}
+.hist-del-btn{display:none;position:absolute;right:8px;top:50%;transform:translateY(-50%);width:18px;height:18px;border-radius:4px;border:none;background:transparent;color:#bbb;font-size:.75rem;cursor:pointer;line-height:1;padding:0;align-items:center;justify-content:center}
+.hist-del-btn:hover{background:#fee2e2;color:#dc2626}
+.sidebar-hist-item:hover .hist-del-btn{display:flex}
 .new-btn{margin:12px;padding:9px;background:#BFB800;color:#fff;border:none;border-radius:8px;font-family:'Lato',sans-serif;font-weight:700;font-size:.82rem;cursor:pointer}
 .new-btn:hover{background:#a8a200}
 .sidebar-label{padding:10px 16px 4px;font-size:.62rem;font-weight:900;color:#BFB800;text-transform:uppercase;letter-spacing:.08em}
@@ -423,11 +426,20 @@ function renderSidebarHistory(){
   list.innerHTML = convs.map(c => `
     <div class="sidebar-hist-item ${c.id === currentConvId ? 'active' : ''}" onclick="restoreConversation('${c.id}')">
       <div class="s-icon" style="background:#f0ede9;color:#696158;font-size:.65rem;flex-shrink:0">💬</div>
-      <div style="min-width:0">
+      <div style="min-width:0;flex:1">
         <div class="s-hist-title" title="${c.title.replace(/"/g,'&quot;')}">${c.title.replace(/</g,'&lt;')}</div>
         <div class="s-hist-time">${c.ts}</div>
       </div>
+      <button class="hist-del-btn" onclick="deleteConversation('${c.id}',event)" title="Eliminar">×</button>
     </div>`).join('');
+}
+
+function deleteConversation(id, event){
+  event.stopPropagation();
+  const convs = getLocalConvs().filter(c => c.id !== id);
+  localStorage.setItem(CONV_KEY, JSON.stringify(convs));
+  if(id === currentConvId) newChat();
+  else renderSidebarHistory();
 }
 
 function restoreConversation(id){
