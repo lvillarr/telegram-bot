@@ -782,10 +782,15 @@ function buildSummaryHTML(){
   const byArea={};let total=0;
   Object.entries(AREAS).forEach(([k,a])=>{
     if(!a.rows)return;
-    const tasks=a.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)');
+    const tasks=a.rows.filter(r=>
+      isWeekTask(r)&&
+      gBucket(r)!=='Stand By (Congelado)'&&
+      gBucket(r)!=='Finalizado'&&
+      gPct(r)!==1&&gPct(r)!==100
+    );
     if(tasks.length){byArea[k]={area:a,tasks};total+=tasks.length}
   });
-  const lateAll=Object.entries(AREAS).flatMap(([k,a])=>(a.rows||[]).filter(r=>isLate(gEnd(r),gPct(r))).map(r=>({r,area:a})));
+  const lateAll=Object.entries(AREAS).flatMap(([k,a])=>(a.rows||[]).filter(r=>isWeekTask(r)&&isLate(gEnd(r),gPct(r))).map(r=>({r,area:a})));
 
   if(!total&&!lateAll.length){
     return`<div class="on-empty"><div style="font-size:32px;margin-bottom:8px">📋</div><div style="font-size:14px;font-weight:700;color:#374151;margin-bottom:4px">Sin actividades esta semana</div><div style="font-size:12px">Marca tareas con la etiqueta "Week"</div></div>`;

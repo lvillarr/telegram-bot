@@ -1110,17 +1110,22 @@ function buildSummaryHTML(){
   const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
   const fmtLong=d=>d.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long',year:'numeric'});
 
-  // Collect week tasks grouped by area
+  // Collect week tasks grouped by area — exclude done and stand-by
   const byArea={};
   let totalWeek=0;
   Object.entries(AREAS).forEach(([key,area])=>{
     if(!area.rows)return;
-    const tasks=area.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)');
+    const tasks=area.rows.filter(r=>
+      isWeekTask(r)&&
+      gBucket(r)!=='Stand By (Congelado)'&&
+      gBucket(r)!=='Finalizado'&&
+      gPct(r)!==1&&gPct(r)!==100
+    );
     if(tasks.length){byArea[key]={area,tasks};totalWeek+=tasks.length}
   });
 
-  // Late tasks across all areas
-  const lateAll=Object.entries(AREAS).flatMap(([k,a])=>(a.rows||[]).filter(r=>isLate(gEnd(r),gPct(r))).map(r=>({r,area:a})));
+  // Late tasks — only WEEK-labeled ones
+  const lateAll=Object.entries(AREAS).flatMap(([k,a])=>(a.rows||[]).filter(r=>isWeekTask(r)&&isLate(gEnd(r),gPct(r))).map(r=>({r,area:a})));
 
   if(!totalWeek&&!lateAll.length){
     return`<div class="on-empty"><div>📋</div><div style="font-size:14px;font-weight:600;color:#374151;margin-bottom:4px">Sin actividades esta semana</div><div style="font-size:12px">Marca tareas con la etiqueta "Week" o activa "Abordaría esta Semana"</div></div>`;
