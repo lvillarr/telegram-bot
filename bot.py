@@ -4143,7 +4143,7 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def planner_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Abre el selector de Planner (Desktop / Mobile)."""
     await update.message.reply_text(
-        "📋 *Planner MC*\n\nElige el formato. Si quieres cargar tu plan, sube el Excel exportado desde Microsoft Planner antes o después de seleccionar.",
+        "📋 *Planner MC* — elige el formato:",
         parse_mode="Markdown",
         reply_markup=PLANNER_KEYBOARD
     )

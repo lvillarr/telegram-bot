@@ -223,6 +223,16 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
       <div><div class="s-label">Análisis Datos</div><div class="s-desc">Excel, PDF, reportes</div></div>
     </div>
     <div class="sidebar-divider"></div>
+    <div class="sidebar-label">Planners</div>
+    <div class="sidebar-item" onclick="openPlannerDirect('planner')">
+      <div class="s-icon" style="background:#6366f1">🖥️</div>
+      <div><div class="s-label">Planner Desktop</div><div class="s-desc">Dashboard ejecutivo web</div></div>
+    </div>
+    <div class="sidebar-item" onclick="openPlannerDirect('planner_mobile')">
+      <div class="s-icon" style="background:#8b5cf6">📱</div>
+      <div><div class="s-label">Planner Mobile</div><div class="s-desc">Vista para celular</div></div>
+    </div>
+    <div class="sidebar-divider"></div>
     <div class="sidebar-label">Sesión actual</div>
     <div class="sidebar-item active" id="sessionItem">
       <div class="s-icon" style="background:#696158;font-size:.6rem">HOY</div>
@@ -814,14 +824,26 @@ function renderArtBar(menuKey){
     }).join('');
 }
 
-function showArtBar(){
+function showArtBar(menuKey='root'){
   document.getElementById('art-bar')?.remove();
   const bar = document.createElement('div');
   bar.className = 'art-bar';
   bar.id = 'art-bar';
   document.getElementById('messages').appendChild(bar);
-  renderArtBar('root');
+  renderArtBar(menuKey);
   document.getElementById('messages').scrollTop = 99999;
+}
+
+async function openPlannerDirect(type){
+  try {
+    const resp = await fetch('/api/artifact', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({type, history:[]})
+    });
+    const data = await resp.json();
+    if(data.result_type === 'url') window.open(data.url, '_blank');
+  } catch(e){ alert('No se pudo abrir el planner.'); }
 }
 
 async function genArtifact(type, btn){
@@ -994,6 +1016,16 @@ async function send(){
   // /notebookrag intercept
   if(text.trim() === '/notebookrag' || text.trim().startsWith('/notebookrag ')){
     openRagPanel();
+    streaming = false;
+    document.getElementById('sendBtn').disabled = false;
+    document.getElementById('input').focus();
+    return;
+  }
+
+  // /planner intercept — muestra botones directos sin llamar al AI
+  if(text.trim() === '/planner'){
+    appendUser(text, null);
+    showArtBar('planner');
     streaming = false;
     document.getElementById('sendBtn').disabled = false;
     document.getElementById('input').focus();
