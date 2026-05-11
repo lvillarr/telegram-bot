@@ -1198,33 +1198,35 @@ function copySummary(){
   const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
 
   const aOrder=['eo','td','ai','id','im'];
-  let gD=0,gI=0,gP=0,gL=0;
+  let gI=0,gP=0,gL=0;
 
-  // Recopilar todas las tareas week con su metadata
+  // Recopilar tareas WEEK pendientes y atrasadas (excluye Finalizado y 100%)
   const allTasks=[];
   aOrder.forEach(key=>{
     const area=AREAS[key];
     if(!area.rows)return;
-    area.rows.filter(r=>isWeekTask(r)&&gBucket(r)!=='Stand By (Congelado)').forEach(r=>{
+    area.rows.filter(r=>
+      isWeekTask(r)&&
+      gBucket(r)!=='Stand By (Congelado)'&&
+      gBucket(r)!=='Finalizado'&&
+      gPct(r)!==1&&gPct(r)!==100
+    ).forEach(r=>{
       const pct=gPct(r);
       const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
-      const isDone=pct===1||pct===100;
       const isL=isLate(gEnd(r),pct);
       const ds=fDate(gEnd(r));
       const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
       const otherLabels=gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
       let status;
-      if(isDone){status='done';gD++;}
-      else if(isL){status='late';gL++;}
+      if(isL){status='late';gL++;}
       else if(pctN!==null&&pctN>0){status='ip';gI++;}
       else{status='pend';gP++;}
       allTasks.push({r,ds,assign,status,otherLabels,areaName:area.name});
     });
   });
 
-  if(!allTasks.length){toast('Sin tareas marcadas como Week esta semana');return;}
+  if(!allTasks.length){toast('Sin tareas pendientes o atrasadas con etiqueta Week');return;}
 
-  // Agrupar por etiqueta (ámbito); sin etiqueta → nombre del área
   const groups=new Map();
   allTasks.forEach(task=>{
     const lbls=task.otherLabels.length?task.otherLabels:[task.areaName];
@@ -1235,7 +1237,7 @@ function copySummary(){
   });
 
   let txt=`📋 *Resumen Semana ${fmt(ws)} – ${fmt(we)}*\n`;
-  txt+=`✅ _${gD} ${gD===1?'lista':'listas'}_ · 🔵 _${gI} en curso_ · ⬜ _${gP} por iniciar_ · 🔴 _${gL} ${gL===1?'vencida':'vencidas'}_\n\n`;
+  txt+=`🔵 _${gI} en curso_ · ⬜ _${gP} por iniciar_ · 🔴 _${gL} ${gL===1?'vencida':'vencidas'}_\n\n`;
 
   groups.forEach((tasks,lbl)=>{
     txt+=`*${lbl}*\n`;
