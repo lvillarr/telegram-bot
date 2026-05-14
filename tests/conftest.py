@@ -7,7 +7,6 @@ Mocks necesarios para importar bot.py sin efectos secundarios:
 """
 import sys
 import os
-import importlib
 from unittest.mock import MagicMock, AsyncMock, patch
 import pytest
 

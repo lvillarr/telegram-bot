@@ -27,6 +27,7 @@ class TestBuildNotasPdf:
 
     def test_pdf_header_magico(self, bot_module):
         buf = bot_module.build_notas_pdf(NOTAS_MINIMAS)
+        buf.seek(0)
         assert buf.read(4) == b"%PDF"
 
     def test_titulo_personalizado(self, bot_module):
@@ -54,6 +55,7 @@ class TestBuildNotasDocx:
 
     def test_docx_header_zip(self, bot_module):
         buf = bot_module.build_notas_docx(NOTAS_MINIMAS)
+        buf.seek(0)
         assert buf.read(2) == b"PK"  # .docx es ZIP
 
     def test_titulo_personalizado(self, bot_module):
