@@ -325,6 +325,12 @@ async def web_api_artifact(request: Request):
             if html.endswith("```"):
                 html = html.rsplit("```", 1)[0]
             html = html.strip()
+            for foto in body.get("notas_fotos", []):
+                placeholder = f"NOTA_FOTO_{foto['n']}"
+                mime = foto.get("foto_mime", "image/jpeg")
+                data_uri = f"data:{mime};base64,{foto['foto_b64']}"
+                html = html.replace(f'src="{placeholder}"', f'src="{data_uri}"')
+                html = html.replace(f"src='{placeholder}'", f'src="{data_uri}"')
             url = store_html(html)
             return {"result_type": "url", "url": url}
 

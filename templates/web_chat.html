@@ -1018,7 +1018,12 @@ async function send(){
 
   // Notas mode intercept
   if(notasMode){
-    addNota(text);
+    const imgFiles = sentFiles.filter(f => f.type === 'image');
+    if(imgFiles.length){
+      imgFiles.forEach(f => addNota(text || '(foto sin descripción)', f));
+    } else {
+      if(text) addNota(text);
+    }
     streaming = false;
     document.getElementById('sendBtn').disabled = false;
     document.getElementById('input').focus();
@@ -1151,17 +1156,24 @@ function toggleNotasMode(){
   if(notasMode) document.getElementById('emptyState')?.remove();
 }
 
-function addNota(text){
+function addNota(text, imgFile){
   const nota = {
     texto: text,
     fecha: new Date().toLocaleString('es-CL',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}),
     n: webNotas.length + 1
   };
+  if(imgFile){
+    nota.foto_b64  = imgFile.data;
+    nota.foto_mime = imgFile.media_type || 'image/jpeg';
+  }
   webNotas.push(nota);
   const msgs = document.getElementById('messages');
   const d    = document.createElement('div');
   d.className = 'nota-card';
-  d.innerHTML = `<div class="nota-num">#${nota.n}</div><div class="nota-text">${nota.texto.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div><div class="nota-fecha">${nota.fecha}</div>`;
+  const imgTag = nota.foto_b64
+    ? `<img src="data:${nota.foto_mime};base64,${nota.foto_b64}" style="max-width:100%;border-radius:6px;margin:6px 0;display:block">`
+    : '';
+  d.innerHTML = `<div class="nota-num">#${nota.n}</div>${imgTag}<div class="nota-text">${nota.texto.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</div><div class="nota-fecha">${nota.fecha}</div>`;
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
   document.getElementById('notas-count').textContent = `${webNotas.length} nota${webNotas.length!==1?'s':''}`;
@@ -1169,7 +1181,14 @@ function addNota(text){
 
 async function generarNotasDoc(tipo){
   if(!webNotas.length){ alert('No hay notas guardadas.'); return; }
-  const description = webNotas.map(n => `[${n.fecha}] Nota #${n.n}:\n${n.texto}`).join('\n\n');
+  const description = webNotas.map(n => {
+    let parte = `[${n.fecha}] Nota #${n.n}:\n${n.texto}`;
+    if(n.foto_b64) parte += `\n[tiene foto adjunta — placeholder: NOTA_FOTO_${n.n}]`;
+    return parte;
+  }).join('\n\n');
+  const notas_fotos = webNotas
+    .filter(n => n.foto_b64)
+    .map(n => ({n: n.n, foto_b64: n.foto_b64, foto_mime: n.foto_mime || 'image/jpeg'}));
   const art_type = tipo === 'pdf' ? 'pdf' : 'notas_onenote';
   const btn = document.querySelector(`.notas-bar-btn[onclick*="${tipo}"]`);
   if(btn){ btn.disabled=true; btn.textContent='⏳...'; }
@@ -1177,7 +1196,7 @@ async function generarNotasDoc(tipo){
     const resp = await fetch('/api/artifact',{
       method:'POST',
       headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({type: art_type, history:[], description_override: description})
+      body: JSON.stringify({type: art_type, history:[], description_override: description, notas_fotos})
     });
     const data = await resp.json();
     if(data.error){ alert('Error: '+data.error); return; }
