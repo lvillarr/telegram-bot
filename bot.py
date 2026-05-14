@@ -163,11 +163,25 @@ async def web_api_chat(request: Request):
                 rag_ctx = rag.build_context(message)
         except Exception:
             pass
+
+        # Correction detection: extract lesson before responding
+        is_correction = _detect_correction(message)
+        if is_correction:
+            last_bot = next(
+                (m["content"] for m in reversed(history) if m.get("role") == "assistant"),
+                "",
+            )
+            loop0 = asyncio.get_event_loop()
+            rule = await loop0.run_in_executor(
+                None, _extract_lesson_rule, message, last_bot if isinstance(last_bot, str) else ""
+            )
+            await loop0.run_in_executor(None, _lessons_save, "web", rule, message)
+
         stream_kwargs = dict(
             model=model,
             max_tokens=8192,
             temperature=0,
-            system=_cached_system(SYSTEM_PROMPT + rag_ctx),
+            system=_cached_system(_dynamic_system(rag_ctx)),
             messages=msgs,
             extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
         )
@@ -180,6 +194,9 @@ async def web_api_chat(request: Request):
                     yield f"data: {json.dumps({'text': text})}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'text': f'[Error: {e}]'})}\n\n"
+        if is_correction:
+            _note = json.dumps({"text": "\n\n_Correccion registrada para ambos canales._"})
+            yield f"data: {_note}\n\n"
         yield "data: [DONE]\n\n"
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, _db_save, "web", session_id, "user", message)
@@ -374,6 +391,93 @@ def _db_history(limit: int = 60) -> list:
                  "content": r[3], "ts": r[4]} for r in rows]
     except Exception:
         return []
+
+
+# ── Lecciones aprendidas ─────────────────────────────────────────────────────
+
+_CORRECTION_RE = re.compile(
+    r"(eso\s+(está|es|fue)\s+(mal|incorrecto|equivocado)|"
+    r"te\s+equivocaste|te\s+corrijo|está[s]?\s+equivocado|"
+    r"la\s+respuesta\s+correcta\s+(es|era|sería)|"
+    r"deber[íi]as?\s+haber|es\s+incorrecto|"
+    r"no[,\s]+en\s+realidad|corrección:|eso\s+no\s+es\s+correcto|"
+    r"eso\s+no\s+era|estás\s+mal|eso\s+está\s+mal)",
+    re.IGNORECASE,
+)
+
+
+def _lessons_init():
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS bot_lessons (
+                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ts       DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    platform TEXT NOT NULL,
+                    rule     TEXT NOT NULL,
+                    raw      TEXT
+                )
+            """)
+            con.commit()
+    except Exception as e:
+        print(f"[DB] lessons init error: {e}")
+
+
+def _lessons_save(platform: str, rule: str, raw: str = ""):
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            con.execute(
+                "INSERT INTO bot_lessons (platform, rule, raw) VALUES (?,?,?)",
+                (platform, rule, raw[:500]),
+            )
+            con.commit()
+    except Exception:
+        pass
+
+
+def _lessons_load(limit: int = 12) -> str:
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            rows = con.execute(
+                "SELECT rule FROM bot_lessons ORDER BY ts DESC LIMIT ?",
+                (limit,),
+            ).fetchall()
+        if not rows:
+            return ""
+        rules = "\n".join(f"- {r[0]}" for r in reversed(rows))
+        return f"\n\n## Lecciones aprendidas — registradas por el usuario\n{rules}"
+    except Exception:
+        return ""
+
+
+def _detect_correction(text: str) -> bool:
+    return bool(_CORRECTION_RE.search(text))
+
+
+def _extract_lesson_rule(correction_msg: str, last_bot_msg: str) -> str:
+    """Llama a Haiku para extraer una regla corta de la corrección."""
+    try:
+        resp = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=120,
+            temperature=0,
+            system=(
+                "Eres un extractor de reglas de comportamiento. "
+                "A partir de una corrección del usuario a un bot, extrae UNA regla concisa "
+                "(máx 2 oraciones) sobre qué debe hacer diferente el bot. "
+                "Responde SOLO la regla, sin preámbulo ni explicación."
+            ),
+            messages=[{
+                "role": "user",
+                "content": (
+                    f"El bot respondió:\n{last_bot_msg[:400]}\n\n"
+                    f"El usuario corrigió:\n{correction_msg}"
+                ),
+            }],
+        )
+        return resp.content[0].text.strip()
+    except Exception:
+        return correction_msg[:200]
 
 
 @_web_app.get("/api/history")
@@ -1100,6 +1204,10 @@ _CACHED_SYSTEM_PROMPT: list | None = None
 _EFFORT_MODELS = {"claude-sonnet-4-6", "claude-opus-4-6", "claude-opus-4-7"}
 
 
+def _dynamic_system(rag_ctx: str = "") -> str:
+    return SYSTEM_PROMPT + rag_ctx + _lessons_load()
+
+
 def claude_response(system: str, user_msg: str, max_tokens: int = 512,
                     model: str = "claude-haiku-4-5",
                     history: list | None = None,
@@ -1656,13 +1764,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rag_ctx = rag.build_context(user_msg) if rag.col and rag.col.count() > 0 else ""
         except Exception:
             rag_ctx = ""
-        system     = SYSTEM_PROMPT + rag_ctx
+
+        # Correction detection
+        is_correction = _detect_correction(user_msg)
+        if is_correction:
+            last_bot = next(
+                (m["content"] for m in reversed(history) if m.get("role") == "assistant"),
+                "",
+            )
+            loop_c = asyncio.get_event_loop()
+            rule = await loop_c.run_in_executor(
+                None, _extract_lesson_rule, user_msg, last_bot if isinstance(last_bot, str) else ""
+            )
+            _lessons_save("telegram", rule, user_msg)
+
+        system     = _dynamic_system(rag_ctx)
         loop = asyncio.get_event_loop()
         reply = await loop.run_in_executor(
             None,
             lambda: claude_response(system, user_msg, max_tokens=4096,
                                     model=get_model_for_msg(context, user_msg), history=history),
         )
+        if is_correction:
+            reply += "\n\n_Correccion registrada para ambos canales._"
         push_history(context, user_msg, reply)
         context.user_data["last_analysis"] = reply
         uid = str(update.effective_user.id)
@@ -1762,7 +1886,7 @@ async def _analyze_image(context) -> str | None:
         model=get_model(context),
         max_tokens=4096,
         temperature=0,
-        system=_cached_system(SYSTEM_PROMPT),
+        system=_cached_system(_dynamic_system()),
         messages=[{"role": "user", "content": content}],
         extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
     )
@@ -3834,7 +3958,7 @@ async def handle_audio(update: Update, context: ContextTypes.DEFAULT_TYPE):
             rag_ctx = rag.build_context(transcript) if rag.col and rag.col.count() > 0 else ""
         except Exception:
             rag_ctx = ""
-        system   = SYSTEM_PROMPT + rag_ctx
+        system   = _dynamic_system(rag_ctx)
         loop = asyncio.get_event_loop()
         reply = await loop.run_in_executor(
             None,
@@ -4321,4 +4445,5 @@ app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
 
 _db_init()
+_lessons_init()
 app.run_polling(drop_pending_updates=True)
