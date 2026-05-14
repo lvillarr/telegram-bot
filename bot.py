@@ -80,6 +80,9 @@ tbody tr:nth-child(even){background:#EDEAE6}
 _async_client = anthropic.AsyncAnthropic()
 _web_app = FastAPI()
 
+_TOKENS_MAP = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 12000}
+_EFFORT_MAP = {"notas_onenote": "low"}
+
 _WEB_CHAT_HTML: str | None = None
 _WEB_CHAT_PATH = os.path.join(os.path.dirname(__file__), "templates", "web_chat.html")
 
@@ -225,8 +228,8 @@ async def web_api_artifact(request: Request):
     description = body.get("description_override") or \
                   "\n\n".join(pairs) or "Genera un artefacto basado en la conversación."
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 12000}
-    _effort_map = {"notas_onenote": "low"}
+    _tokens_map = _TOKENS_MAP
+    _effort_map = _EFFORT_MAP
 
     try:
         # Planner — HTML estático, sin llamada a Claude
@@ -1427,8 +1430,8 @@ async def _render_artifact(artifact_type: str, description: str,
         )
         return
 
-    _tokens_map = {"html": 8000, "pdf": 6000, "gantt": 4000, "excel": 3000, "pptx": 6000, "email": 2000, "notas_onenote": 12000}
-    _effort_map = {"notas_onenote": "low"}
+    _tokens_map = _TOKENS_MAP
+    _effort_map = _EFFORT_MAP
     prompt = ARTIFACT_PROMPTS[artifact_type].replace("{CSS_URL}", f"{PUBLIC_BASE}/arauco.css")
     loop = asyncio.get_event_loop()
     raw = ""
