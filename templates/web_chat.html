@@ -236,6 +236,16 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
       <div><div class="s-label">Planner Mobile</div><div class="s-desc">Vista para celular</div></div>
     </div>
     <div class="sidebar-divider"></div>
+    <div class="sidebar-label">Herramientas</div>
+    <div class="sidebar-item" id="sidebarNotasBtn" onclick="toggleNotasMode()">
+      <div class="s-icon" style="background:#fffbea;color:#BFB800;border:1.5px solid #DFD1A7">📝</div>
+      <div><div class="s-label">Modo notas</div><div class="s-desc">Capturar ideas y fotos</div></div>
+    </div>
+    <div class="sidebar-item" id="sidebarRagBtn" onclick="openRagPanel()">
+      <div class="s-icon" style="background:#f0ede9;color:#696158">📖</div>
+      <div><div class="s-label">Base RAG</div><div class="s-desc">Consultar conocimiento Arauco</div></div>
+    </div>
+    <div class="sidebar-divider"></div>
     <div class="sidebar-label">Sesión actual</div>
     <div class="sidebar-item active" id="sessionItem">
       <div class="s-icon" style="background:#696158;font-size:.6rem">HOY</div>
@@ -1152,6 +1162,7 @@ function toggleNotasMode(){
   const ta  = document.getElementById('input');
   bar.style.display = notasMode ? 'flex' : 'none';
   btn.classList.toggle('active', notasMode);
+  document.getElementById('sidebarNotasBtn')?.classList.toggle('active', notasMode);
   ta.placeholder = notasMode ? 'Escribe tu nota...' : 'Escribe o usa / para comandos...';
   if(notasMode) document.getElementById('emptyState')?.remove();
 }
@@ -1259,11 +1270,13 @@ async function ragUploadFiles(input){
 
 async function openRagPanel(){
   document.getElementById('ragPanel').classList.add('open');
+  document.getElementById('sidebarRagBtn')?.classList.add('active');
   await loadRagDocs();
 }
 
 function closeRagPanel(){
   document.getElementById('ragPanel').classList.remove('open');
+  document.getElementById('sidebarRagBtn')?.classList.remove('active');
 }
 
 async function loadRagDocs(){
