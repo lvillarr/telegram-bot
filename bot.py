@@ -2056,18 +2056,41 @@ def _notas_status_text(notas: list) -> str:
             f"Modo notas activo — escribe, envía un audio o una foto.")
 
 
+def _flush_pending_images_to_notas(context) -> int:
+    """Move any pending_images into notas. Returns count of images flushed."""
+    pending = context.user_data.pop("pending_images", [])
+    context.user_data.pop("pending_image", None)
+    if not pending:
+        return 0
+    notas = context.user_data.get("notas", [])
+    for img in pending:
+        caption = img.get("caption") or "(foto sin descripción)"
+        notas.append({
+            "texto": caption,
+            "fecha": datetime.now().strftime("%d/%m %H:%M"),
+            "n": len(notas) + 1,
+            "foto_b64": img["b64"],
+            "foto_mime": img.get("media_type", "image/jpeg"),
+        })
+    context.user_data["notas"] = notas
+    return len(pending)
+
+
 async def notas_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
 
     if query.data == "notas_modo":
         context.user_data["modo_notas"] = True
+        flushed = _flush_pending_images_to_notas(context)
         notas = context.user_data.get("notas", [])
         n = len(notas)
+        extra = f"\n\n_{flushed} imagen(es) pendiente(s) guardada(s) como nota._" if flushed else ""
         msg = ("📝 *Modo notas activado*\n\n"
                "Escribe, envía un audio o una foto — "
                "todo se guardará como nota.\n\n"
-               f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}")
+               f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}"
+               f"{extra}")
         try:
             await query.edit_message_reply_markup(reply_markup=None)
         except Exception:
@@ -4279,12 +4302,15 @@ async def planner_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def notas_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Activa el modo notas directamente."""
     context.user_data["modo_notas"] = True
+    flushed = _flush_pending_images_to_notas(context)
     notas = context.user_data.get("notas", [])
     n = len(notas)
+    extra = f"\n\n_{flushed} imagen(es) pendiente(s) guardada(s) como nota._" if flushed else ""
     msg = ("📝 *Modo notas activado*\n\n"
            "Escribe lo que quieras anotar o envía un audio — "
            "todo se guardará como nota.\n\n"
-           f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}")
+           f"{'_Tienes ' + str(n) + ' nota(s) previas._' if n else '_Aún no hay notas._'}"
+           f"{extra}")
     await update.message.reply_text(msg, parse_mode="Markdown", reply_markup=NOTAS_KEYBOARD)
 
 
