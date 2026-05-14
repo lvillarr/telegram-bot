@@ -85,6 +85,29 @@ Una vez recibidos los resultados:
 - Traduce hallazgos técnicos a lenguaje de negocio
 - Presenta al usuario: **contexto → hallazgos clave → recomendaciones → próximos pasos**
 
+### Paso 3-AD — Síntesis ad-hoc (imágenes o archivos enviados directamente)
+
+Cuando el usuario envía imágenes, capturas o archivos sin un flujo formal de delegación:
+
+**Regla crítica:** cada recomendación debe derivar de un hallazgo específico visible en el insumo. Formato obligatorio:
+
+```
+**[Agente]:** [Recomendación concreta]
+← Evidencia: [dato, cifra, zona o métrica específica del insumo que origina esta recomendación]
+```
+
+**Prohibido:**
+- Recomendaciones basadas en conocimiento general del dominio forestal que no aparezcan en el insumo
+- Sugerencias genéricas de proceso sin vínculo a datos presentes en el análisis
+- Frases como "podría existir", "es probable que", "se recomienda revisar" sin evidencia visible
+
+**Si no hay evidencia suficiente:** usar en su lugar:
+```
+⚠️ Hipótesis a validar: [enunciado] — requiere [dato faltante]
+```
+
+Mejor dos recomendaciones sólidas que cinco especulativas.
+
 ---
 
 ## Casos de uso frecuentes
