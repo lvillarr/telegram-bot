@@ -284,7 +284,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 .on-meta{font-size:12px;color:#6b7280;margin-bottom:24px}
 .on-meta b{color:#374151}
 .on-section{margin-bottom:22px;border-left:3px solid #e5e7eb;padding-left:16px}
-.on-sec-head{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+.on-sec-head{font-size:15px;font-weight:700;letter-spacing:-.2px;margin-bottom:10px;display:flex;align-items:center;gap:7px}
 .on-sec-icon{font-size:15px}
 .on-task{display:flex;align-items:flex-start;gap:8px;padding:7px 0;border-bottom:1px solid #ece9e3}
 .on-task:last-child{border-bottom:none}
@@ -501,7 +501,15 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
           </div>
           <div class="area-upload-btn" id="aupload-ai" onclick="openModalFor('ai')">
             <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
-            <span id="aupload-ai-txt">Cargar Excel del área</span>
+            <span id="aupload-ai-txt">IA General</span>
+          </div>
+          <div class="area-upload-btn" id="aupload-id" onclick="openModalFor('id')" style="border-top:none">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+            <span id="aupload-id-txt">I+D en IA</span>
+          </div>
+          <div class="area-upload-btn" id="aupload-im" onclick="openModalFor('im')" style="border-top:none">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+            <span id="aupload-im-txt">Implementación IA</span>
           </div>
           <div class="area-drilldown-btn" onclick="showPlanner('ai',null)">Ver tablero completo →</div>
         </div>
@@ -863,7 +871,21 @@ function updateAreaCards(){
 
     if(area.rows){
       btn.classList.add('loaded');
-      btntxt.textContent=`✓ ${rows.length} tareas · Actualizar Excel`;
+      btntxt.textContent=`✓ ${area.rows.length} tareas · Actualizar`;
+    }
+    // For AI: also update id and im sub-buttons
+    if(areaId==='ai'){
+      ['id','im'].forEach(sub=>{
+        const sbtn=document.getElementById('aupload-'+sub);
+        const stxt=document.getElementById('aupload-'+sub+'-txt');
+        if(AREAS[sub].rows){
+          sbtn.classList.add('loaded');
+          stxt.textContent=`✓ ${AREAS[sub].rows.length} tareas · Actualizar`;
+        }else{
+          sbtn.classList.remove('loaded');
+          stxt.textContent=sub==='id'?'I+D en IA':'Implementación IA';
+        }
+      });
     }
 
     if(!s){document.getElementById('abody-'+areaId).innerHTML='<div style="text-align:center;padding:16px 0;color:var(--muted);font-size:12px">Sin datos — carga el Excel</div>';return}

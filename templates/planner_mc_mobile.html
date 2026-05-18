@@ -193,7 +193,7 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
 .on-title{font-size:22px;font-weight:700;letter-spacing:-.4px;border-bottom:2px solid #111827;padding-bottom:5px;margin-bottom:3px}
 .on-meta{font-size:11.5px;color:#6b7280;margin-bottom:20px;line-height:1.5}
 .on-section{margin-bottom:18px;border-left:3px solid #e5e7eb;padding-left:14px}
-.on-sec-head{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
+.on-sec-head{font-size:15px;font-weight:700;letter-spacing:-.2px;margin-bottom:8px;display:flex;align-items:center;gap:6px}
 .on-task{display:flex;align-items:flex-start;gap:8px;padding:8px 0;border-bottom:1px solid #ece9e3}
 .on-task:last-child{border-bottom:none}
 .on-chk{width:17px;height:17px;border:2px solid #9ca3af;border-radius:3px;flex-shrink:0;margin-top:2px;display:flex;align-items:center;justify-content:center;font-size:10px}
@@ -332,12 +332,20 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
         </div>
       </div>
       <div id="astats-ai"><div class="alert-empty">Sin datos — carga el Excel</div></div>
-      <div class="area-actions">
-        <button class="area-btn upload-btn" id="abtn-ai" onclick="openModalFor('ai')">
+      <div class="area-actions" style="flex-wrap:wrap">
+        <button class="area-btn upload-btn" id="abtn-ai" onclick="openModalFor('ai')" style="flex-basis:50%;border-right:1px solid var(--border)">
           <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
-          <span id="abtntxt-ai">Cargar Excel</span>
+          <span id="abtntxt-ai">IA General</span>
         </button>
-        <button class="area-btn drill-btn" onclick="navToArea('ai')">Ver tablero →</button>
+        <button class="area-btn drill-btn" onclick="navToArea('ai')" style="flex-basis:50%">Ver tablero →</button>
+        <button class="area-btn upload-btn" id="abtn-id" onclick="openModalFor('id')" style="flex-basis:50%;border-top:1px solid var(--border);border-right:1px solid var(--border)">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+          <span id="abtntxt-id">I+D en IA</span>
+        </button>
+        <button class="area-btn upload-btn" id="abtn-im" onclick="openModalFor('im')" style="flex-basis:50%;border-top:1px solid var(--border)">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M7 9V2M4 5l3-3 3 3"/><path d="M1 11h12"/></svg>
+          <span id="abtntxt-im">Implementación IA</span>
+        </button>
       </div>
     </div>
   </div>
@@ -628,7 +636,15 @@ function updateAreaCards(){
     const s=calcStats(rows);
     const btn=document.getElementById('abtn-'+aId);
     const btntxt=document.getElementById('abtntxt-'+aId);
-    if(a.rows){btn.classList.add('loaded');btntxt.textContent=`✓ ${rows.length} tareas · Actualizar`}
+    if(a.rows){btn.classList.add('loaded');btntxt.textContent=`✓ ${a.rows.length} tareas · Actualizar`}
+    if(aId==='ai'){
+      ['id','im'].forEach(sub=>{
+        const sbtn=document.getElementById('abtn-'+sub);
+        const stxt=document.getElementById('abtntxt-'+sub);
+        if(AREAS[sub].rows){sbtn.classList.add('loaded');stxt.textContent=`✓ ${AREAS[sub].rows.length} tareas`;}
+        else{sbtn.classList.remove('loaded');stxt.textContent=sub==='id'?'I+D en IA':'Implementación IA';}
+      });
+    }
     if(!s){document.getElementById('astats-'+aId).innerHTML='<div class="alert-empty">Sin datos — carga el Excel</div>';return}
     document.getElementById('astats-'+aId).innerHTML=`
       <div class="area-stats">
