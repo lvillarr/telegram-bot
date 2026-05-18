@@ -51,6 +51,8 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
 /* ── VIEWS ───────────────────────────────── */
 .view{display:none;padding:16px 14px 20px}
 .view.on{display:block}
+#view-plan{padding:0}
+#view-plan.on{display:flex}
 
 /* ── KPI ROW ─────────────────────────────── */
 .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px}
@@ -212,6 +214,26 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
 .sum-footer .mbtn{flex:1}
 .week-sum-btn{width:100%;margin-bottom:14px;padding:13px;border-radius:12px;background:#fff;border:1.5px solid #6366f1;color:#4f46e5;font-size:14px;font-weight:700;font-family:var(--font);cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 1px 4px rgba(99,102,241,.12);-webkit-tap-highlight-color:transparent}
 
+/* ── GANTT MOBILE ────────────────────────── */
+.gantt-topbar-m{padding:10px 14px;background:#fff;border-bottom:1px solid var(--border);display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.gantt-toggle-m{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.gtoggle-m{padding:5px 12px;font-size:12px;font-weight:600;font-family:var(--font);background:#fff;border:none;cursor:pointer;color:var(--muted);-webkit-tap-highlight-color:transparent}
+.gtoggle-m.on{background:#0f1124;color:#fff}
+.gantt-hscroll{flex:1;overflow-x:auto;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.gantt-hscroll::-webkit-scrollbar{display:none}
+.gantt-tbl{border-collapse:collapse;min-width:100%}
+.gantt-tbl th{background:#f8f9fc;border-bottom:1px solid var(--border);border-right:1px solid #eee;font-size:9.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;text-align:center;padding:3px 0;position:sticky;top:0;z-index:10}
+.gantt-tbl th.gn{text-align:left;padding:3px 10px;min-width:160px;max-width:160px;position:sticky;left:0;z-index:20;background:#f8f9fc}
+.gantt-tbl td{border-bottom:1px solid #f3f4f8;border-right:1px solid #f0f1f5;height:32px;padding:0;vertical-align:middle}
+.gantt-tbl td.gc{min-width:160px;max-width:160px;padding:4px 10px;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;position:sticky;left:0;background:#fff;z-index:5;border-right:2px solid var(--border)}
+.gantt-tbl tr:active td{background:#f8f9ff}
+.gantt-tbl .gah td{background:#f8f9fc;font-size:9.5px;font-weight:700;text-transform:uppercase;color:var(--muted);padding:4px 10px;border-bottom:1px solid var(--border)}
+.gcell-w{width:28px;min-width:28px;position:relative}
+.gbar-m{position:absolute;top:50%;transform:translateY(-50%);height:12px;border-radius:6px;opacity:.85;min-width:3px}
+.gbar-m.done{opacity:.4}
+.gbar-m.late-m{border:1.5px solid #ef4444}
+.g-today-col{background:rgba(239,68,68,.1);border-left:1.5px solid #ef4444}
+
 /* ── EMPTY STATE ─────────────────────────── */
 .empty{display:flex;flex-direction:column;align-items:center;padding:40px 20px;gap:8px;text-align:center}
 .empty svg{width:44px;height:44px;opacity:.25}
@@ -351,20 +373,38 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
   </div>
 
   <!-- ── PLANNER VIEW (reused for eo/td/ai) ── -->
-  <div id="view-plan" class="view">
-    <div class="plan-search">
-      <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="4"/><path d="M10 10l3 3"/></svg>
-      <input type="text" id="bsin" placeholder="Filtrar tareas..." oninput="renderPlan()">
+  <div id="view-plan" class="view" style="padding:0;display:none;flex-direction:column">
+    <!-- tabs de vista dentro de plan -->
+    <div style="display:flex;border-bottom:1px solid var(--border);background:#fff;flex-shrink:0">
+      <button class="area-btn" id="vtab-board" style="font-size:12px;font-weight:700;color:#4f46e5;border-bottom:2px solid #4f46e5;flex:1" onclick="setPlanTab('board',this)">Tablero</button>
+      <button class="area-btn" id="vtab-gantt" style="font-size:12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;flex:1" onclick="setPlanTab('gantt',this)">Timeline</button>
     </div>
-    <div class="chips-scroll" id="bchips">
-      <span class="chip" style="background:#ffc8d4;color:#9b1c2e" onclick="bFbucket('Stand By (Congelado)',this)">Stand By <b id="bc0">0</b></span>
-      <span class="chip" style="background:#fde6b0;color:#7a4500" onclick="bFbucket('No iniciado (BackLog)',this)">BackLog <b id="bc1">0</b></span>
-      <span class="chip" style="background:#fde68a;color:#78520a" onclick="bFbucket('Pendiente',this)">Pendiente <b id="bc2">0</b></span>
-      <span class="chip" style="background:#a7f3d0;color:#065f3e" onclick="bFbucket('En Curso',this)">En Curso <b id="bc3">0</b></span>
-      <span class="chip" style="background:#ddd6fe;color:#4c1d95" onclick="bFbucket('Finalizado',this)">Finalizado <b id="bc4">0</b></span>
+    <div id="plan-board-content" style="padding:16px 14px 20px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch">
+      <div class="plan-search">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="6" cy="6" r="4"/><path d="M10 10l3 3"/></svg>
+        <input type="text" id="bsin" placeholder="Filtrar tareas..." oninput="renderPlan()">
+      </div>
+      <div class="chips-scroll" id="bchips">
+        <span class="chip" style="background:#ffc8d4;color:#9b1c2e" onclick="bFbucket('Stand By (Congelado)',this)">Stand By <b id="bc0">0</b></span>
+        <span class="chip" style="background:#fde6b0;color:#7a4500" onclick="bFbucket('No iniciado (BackLog)',this)">BackLog <b id="bc1">0</b></span>
+        <span class="chip" style="background:#fde68a;color:#78520a" onclick="bFbucket('Pendiente',this)">Pendiente <b id="bc2">0</b></span>
+        <span class="chip" style="background:#a7f3d0;color:#065f3e" onclick="bFbucket('En Curso',this)">En Curso <b id="bc3">0</b></span>
+        <span class="chip" style="background:#ddd6fe;color:#4c1d95" onclick="bFbucket('Finalizado',this)">Finalizado <b id="bc4">0</b></span>
+      </div>
+      <div class="plan-info" id="plan-info"></div>
+      <div id="plan-body"></div>
     </div>
-    <div class="plan-info" id="plan-info"></div>
-    <div id="plan-body"></div>
+    <div id="plan-gantt-content" style="display:none;flex:1;flex-direction:column;overflow:hidden">
+      <div class="gantt-topbar-m">
+        <div class="gantt-toggle-m">
+          <button class="gtoggle-m on" onclick="setGanttScaleM('weeks',this)">Semanas</button>
+          <button class="gtoggle-m" onclick="setGanttScaleM('months',this)">Meses</button>
+        </div>
+      </div>
+      <div class="gantt-hscroll" id="gantt-hscroll-m">
+        <div id="gantt-inner-m"></div>
+      </div>
+    </div>
   </div>
 
   <!-- ── ALERTS VIEW ── -->
@@ -590,6 +630,18 @@ function navToArea(areaId){
   const navBtn=document.getElementById('nav-'+areaId);
   if(navBtn)navBtn.classList.add('on');
   document.getElementById('hdr-sub').textContent=AREAS[areaId].name;
+  // Reset plan tab to board on area change
+  if(curPlanTab==='gantt'){
+    curPlanTab='board';
+    document.getElementById('plan-board-content').style.display='';
+    document.getElementById('plan-gantt-content').style.display='none';
+    document.getElementById('vtab-board').style.color='#4f46e5';
+    document.getElementById('vtab-board').style.borderBottomColor='#4f46e5';
+    document.getElementById('vtab-board').style.fontWeight='700';
+    document.getElementById('vtab-gantt').style.color='var(--muted)';
+    document.getElementById('vtab-gantt').style.borderBottomColor='transparent';
+    document.getElementById('vtab-gantt').style.fontWeight='600';
+  }
   renderPlan();
   document.querySelector('.content').scrollTop=0;
 }
@@ -597,7 +649,7 @@ function navToArea(areaId){
 // ── RENDER EXEC ────────────────────────────────────────
 function refreshAll(){
   updateKPIs();updateAreaCards();
-  if(curArea==='plan'||curArea==='eo'||curArea==='td'||curArea==='ai'||curArea==='id'||curArea==='im')renderPlan();
+  if(curArea==='plan'||curArea==='eo'||curArea==='td'||curArea==='ai'||curArea==='id'||curArea==='im'){renderPlan();if(curPlanTab==='gantt')renderGanttM();}
   if(curArea==='alerts')renderAlerts();
   // Late dot
   const allRows=Object.values(AREAS).flatMap(a=>a.rows||[]);
@@ -763,6 +815,117 @@ function renderAlerts(){
 // ── FILTERS ────────────────────────────────────────────
 function setBCounts(c){['bc0','bc1','bc2','bc3','bc4'].forEach((id,i)=>document.getElementById(id).textContent=c[i]??0)}
 function bFbucket(b,el){abf=abf===b?null:b;document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));if(abf)el.classList.add('on');renderPlan()}
+
+// ── GANTT MOBILE ───────────────────────────────────────
+let ganttScaleM='weeks';
+let curPlanTab='board';
+
+function setPlanTab(tab,btn){
+  curPlanTab=tab;
+  const board=document.getElementById('plan-board-content');
+  const gantt=document.getElementById('plan-gantt-content');
+  board.style.display=tab==='board'?'':'none';
+  gantt.style.display=tab==='gantt'?'flex':'none';
+  document.querySelectorAll('[id^="vtab-"]').forEach(b=>{
+    b.style.color='var(--muted)';b.style.borderBottomColor='transparent';b.style.fontWeight='600';
+  });
+  btn.style.color='#4f46e5';btn.style.borderBottomColor='#4f46e5';btn.style.fontWeight='700';
+  if(tab==='gantt')renderGanttM();
+}
+
+function setGanttScaleM(s,btn){
+  ganttScaleM=s;
+  document.querySelectorAll('.gtoggle-m').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderGanttM();
+}
+
+function renderGanttM(){
+  const inner=document.getElementById('gantt-inner-m');
+  if(!inner)return;
+  const a=AREAS[curArea];
+  if(!a){inner.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Sin datos con fechas</div>';return;}
+  let entries=[];
+
+  const keys=curArea==='ai'?['ai','id','im']:[curArea];
+  keys.forEach(k=>{
+    if(!AREAS[k]||!AREAS[k].rows)return;
+    AREAS[k].rows.forEach(r=>{
+      const end=pDate(gEnd(r));
+      if(!end)return;
+      let startRaw=r['Inicio']||r['Start Date']||r['Fecha inicio']||r['Comienzo']||null;
+      let start=startRaw?pDate(startRaw):null;
+      if(!start){start=new Date(end);start.setDate(start.getDate()-14);}
+      const pct=gPct(r);
+      const pctN=pct===null?0:(pct<=1?Math.round(pct*100):Math.round(pct));
+      entries.push({r,a:AREAS[k],start,end,pctN,isDone:pctN>=100,isLateTask:isLate(gEnd(r),pct)});
+    });
+  });
+
+  if(!entries.length){
+    inner.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Sin datos con fechas</div>';
+    return;
+  }
+
+  entries.sort((a,b)=>a.start-b.start);
+
+  const allDates=entries.flatMap(e=>[e.start,e.end]);
+  let minDate=new Date(Math.min(...allDates));
+  let maxDate=new Date(Math.max(...allDates));
+
+  const startOfWeekM=d=>{const r=new Date(d);const day=r.getDay();r.setDate(r.getDate()-(day===0?6:day-1));r.setHours(0,0,0,0);return r;};
+
+  if(ganttScaleM==='weeks'){
+    minDate=startOfWeekM(minDate);minDate.setDate(minDate.getDate()-7);
+    maxDate=startOfWeekM(maxDate);maxDate.setDate(maxDate.getDate()+14);
+  }else{
+    minDate=new Date(minDate.getFullYear(),minDate.getMonth()-1,1);
+    maxDate=new Date(maxDate.getFullYear(),maxDate.getMonth()+2,1);
+  }
+
+  const cols=[];
+  if(ganttScaleM==='weeks'){
+    let d=new Date(minDate);
+    while(d<maxDate){cols.push({date:new Date(d),label:d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'})});d.setDate(d.getDate()+7);}
+  }else{
+    let d=new Date(minDate.getFullYear(),minDate.getMonth(),1);
+    while(d<maxDate){cols.push({date:new Date(d),label:d.toLocaleDateString('es-CL',{month:'short',year:'2-digit'})});d.setMonth(d.getMonth()+1);}
+  }
+
+  const today=new Date();today.setHours(0,0,0,0);
+  const todayIdx=ganttScaleM==='weeks'
+    ?Math.floor((today-minDate)/(7*86400000))
+    :Math.floor((today.getFullYear()*12+today.getMonth())-(minDate.getFullYear()*12+minDate.getMonth()));
+
+  let html='<table class="gantt-tbl"><thead><tr><th class="gn">Tarea</th>';
+  cols.forEach((c,i)=>{html+=`<th class="gcell-w${i===todayIdx?' g-today-col':''}">${c.label}</th>`;});
+  html+='</tr></thead><tbody>';
+
+  entries.forEach(e=>{
+    const startCol=ganttScaleM==='weeks'
+      ?Math.floor((e.start-minDate)/(7*86400000))
+      :Math.floor((e.start.getFullYear()*12+e.start.getMonth())-(minDate.getFullYear()*12+minDate.getMonth()));
+    const endCol=ganttScaleM==='weeks'
+      ?Math.ceil((e.end-minDate)/(7*86400000))
+      :Math.ceil((e.end.getFullYear()*12+e.end.getMonth()+1)-(minDate.getFullYear()*12+minDate.getMonth()));
+    const name=gName(e.r);
+    html+=`<tr><td class="gc"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${e.a.hex};margin-right:5px;vertical-align:middle"></span>${name.substring(0,28)}${name.length>28?'…':''}</td>`;
+    cols.forEach((c,i)=>{
+      const inBar=i>=startCol&&i<endCol;
+      const isStart=i===startCol,isEnd=i===endCol-1;
+      const isTd=i===todayIdx;
+      if(inBar){
+        const br=`${isStart?'6px':'0'} ${isEnd?'6px':'0'} ${isEnd?'6px':'0'} ${isStart?'6px':'0'}`;
+        html+=`<td class="gcell-w${isTd?' g-today-col':''}"><div class="gbar-m${e.isDone?' done':''}${e.isLateTask?' late-m':''}" style="background:${e.a.hex};border-radius:${br};left:${isStart?1:0}px;right:${isEnd?1:0}px"></div></td>`;
+      }else{
+        html+=`<td class="gcell-w${isTd?' g-today-col':''}"></td>`;
+      }
+    });
+    html+='</tr>';
+  });
+  html+='</tbody></table>';
+  inner.innerHTML=html;
+}
 
 // ── TOAST ──────────────────────────────────────────────
 let tt=null;

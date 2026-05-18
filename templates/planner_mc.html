@@ -257,6 +257,32 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 .week-sum-btn:hover{background:#f0f1ff;border-color:#4f46e5;box-shadow:0 2px 8px rgba(99,102,241,.2)}
 .week-sum-btn svg{flex-shrink:0}
 
+/* GANTT */
+.gantt-topbar{background:#fff;border-bottom:1px solid var(--border);padding:8px 18px;display:flex;align-items:center;gap:10px;flex-shrink:0}
+.gantt-toggle{display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden}
+.gtoggle-btn{padding:4px 12px;font-size:11.5px;font-weight:600;font-family:var(--font);background:#fff;border:none;cursor:pointer;color:var(--muted)}
+.gtoggle-btn.on{background:#0f1124;color:#fff}
+.gantt-area-sel{display:flex;gap:5px;margin-left:8px;flex-wrap:wrap}
+.garea-btn{padding:3px 10px;border-radius:12px;font-size:11px;font-weight:700;cursor:pointer;border:1.5px solid transparent;background:var(--subtle);color:var(--muted);font-family:var(--font)}
+.garea-btn.on{border-color:currentColor}
+.gantt-scroll{flex:1;overflow:auto;padding:0}
+.gantt-scroll::-webkit-scrollbar{height:6px;width:6px}.gantt-scroll::-webkit-scrollbar-thumb{background:#d1d5db;border-radius:3px}
+.gantt-table{border-collapse:collapse;min-width:100%}
+.gantt-table th{background:#f8f9fc;border-bottom:1px solid var(--border);border-right:1px solid var(--border);font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;white-space:nowrap;text-align:center;padding:4px 0;position:sticky;top:0;z-index:10}
+.gantt-table th.gcol-name{text-align:left;padding:4px 12px;min-width:220px;max-width:220px;width:220px;position:sticky;left:0;z-index:20;background:#f8f9fc}
+.gantt-table td{border-bottom:1px solid #f3f4f8;border-right:1px solid #f0f1f5;padding:0;vertical-align:middle}
+.gantt-table td.gname-cell{padding:6px 12px;font-size:11.5px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:220px;min-width:220px;width:220px;position:sticky;left:0;background:#fff;z-index:5;border-right:2px solid var(--border)}
+.gantt-table tr:hover td{background:#fafbff}
+.gantt-table tr:hover td.gname-cell{background:#fafbff}
+.gantt-bar-cell{width:32px;min-width:32px;height:34px;position:relative}
+.gantt-bar{position:absolute;top:50%;transform:translateY(-50%);height:14px;border-radius:7px;opacity:.85;transition:opacity .1s;cursor:default;min-width:4px}
+.gantt-bar:hover{opacity:1}
+.gantt-bar.done{opacity:.45}
+.gantt-bar.late{border:2px solid #ef4444}
+.gantt-today{background:rgba(239,68,68,.15);border-left:2px solid #ef4444}
+.gantt-area-hdr td{background:#f8f9fc;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:5px 12px;border-bottom:1px solid var(--border)}
+.gantt-empty{display:flex;align-items:center;justify-content:center;height:100%;color:var(--muted);font-size:13px;padding:40px}
+
 /* MISC */
 .no-data-state{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--muted);text-align:center;gap:8px}
 .no-data-state svg{width:40px;height:40px;opacity:.3}
@@ -381,6 +407,9 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
       </button>
       <button class="tb-tab" onclick="setPlanView('grid',this)">
         <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect y="0" width="16" height="3" rx="1"/><rect y="5" width="16" height="3" rx="1"/><rect y="10" width="16" height="3" rx="1"/></svg>Cuadrícula
+      </button>
+      <button class="tb-tab" id="ptab-gantt" onclick="setPlanView('gantt',this)">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><rect y="2" width="8" height="3" rx="1"/><rect x="5" y="7" width="11" height="3" rx="1"/><rect x="2" y="12" width="9" height="3" rx="1"/></svg>Timeline
       </button>
     </div>
     <div class="tb-right">
@@ -603,6 +632,26 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
         </table>
       </div>
     </div>
+    <div id="pview-gantt" style="display:none;flex:1;overflow:hidden;flex-direction:column">
+      <div class="gantt-topbar">
+        <span style="font-size:11.5px;font-weight:600;color:var(--muted)">Escala:</span>
+        <div class="gantt-toggle">
+          <button class="gtoggle-btn on" onclick="setGanttScale('weeks',this)">Semanas</button>
+          <button class="gtoggle-btn" onclick="setGanttScale('months',this)">Meses</button>
+        </div>
+        <div class="gantt-area-sel">
+          <button class="garea-btn on" style="color:#374151" onclick="setGanttArea('all',this)">Todas las áreas</button>
+          <button class="garea-btn" style="color:var(--eo)" onclick="setGanttArea('eo',this)">🏭 EO</button>
+          <button class="garea-btn" style="color:var(--td)" onclick="setGanttArea('td',this)">💻 TD</button>
+          <button class="garea-btn" style="color:var(--ai)" onclick="setGanttArea('ai',this)">🤖 IA</button>
+          <button class="garea-btn" style="color:var(--id)" onclick="setGanttArea('id',this)">🔬 I+D</button>
+          <button class="garea-btn" style="color:var(--im)" onclick="setGanttArea('im',this)">⚙️ Impl.</button>
+        </div>
+      </div>
+      <div class="gantt-scroll">
+        <div id="gantt-inner"></div>
+      </div>
+    </div>
   </div><!-- /view-plan -->
 
 </div><!-- /main -->
@@ -806,7 +855,9 @@ function setPlanView(v,btn){
   btn.classList.add('on');
   document.getElementById('pview-board').style.display=v==='board'?'flex':'none';
   document.getElementById('pview-grid').style.display=v==='grid'?'flex':'none';
+  document.getElementById('pview-gantt').style.display=v==='gantt'?'flex':'none';
   if(v==='grid')renderGrid();
+  if(v==='gantt')renderGantt();
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -817,7 +868,7 @@ function refreshAll(){
   updateAreaCards();
   if(curExecTab==='iniciativas')renderInitiatives();
   if(curExecTab==='alertas')renderAlerts();
-  if(curView==='plan'){renderBoard();if(curPlanView==='grid')renderGrid();}
+  if(curView==='plan'){renderBoard();if(curPlanView==='grid')renderGrid();if(curPlanView==='gantt')renderGantt();}
 }
 
 function calcStats(rows){
@@ -1089,6 +1140,160 @@ function setBCounts(c){['bc0','bc1','bc2','bc3','bc4'].forEach((id,i)=>document.
 function bFbucket(b,el){abf=abf===b?null:b;document.querySelectorAll('.bchip').forEach(c=>c.classList.remove('af'));if(abf)el.classList.add('af');renderBoard();if(curPlanView==='grid')renderGrid()}
 function bFilter(){renderBoard();if(curPlanView==='grid')renderGrid()}
 function gsrt(col){if(sc===col)sd*=-1;else{sc=col;sd=1}renderGrid()}
+
+// ═══════════════════════════════════════════════════════════
+// GANTT
+// ═══════════════════════════════════════════════════════════
+let ganttScale='weeks'; // 'weeks' | 'months'
+let ganttArea='all';    // 'all' | 'eo' | 'td' | 'ai' | 'id' | 'im'
+
+function startOfWeek(d){
+  const r=new Date(d);const day=r.getDay();
+  r.setDate(r.getDate()-(day===0?6:day-1));
+  r.setHours(0,0,0,0);return r;
+}
+
+function setGanttScale(s,btn){
+  ganttScale=s;
+  document.querySelectorAll('.gtoggle-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderGantt();
+}
+
+function setGanttArea(a,btn){
+  ganttArea=a;
+  document.querySelectorAll('.garea-btn').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderGantt();
+}
+
+function renderGantt(){
+  const inner=document.getElementById('gantt-inner');
+  if(!inner)return;
+
+  // Collect rows
+  const aFilter=ganttArea==='all'?['eo','td','ai','id','im']:[ganttArea];
+  const entries=[];
+  aFilter.forEach(k=>{
+    const a=AREAS[k];
+    if(!a||!a.rows)return;
+    a.rows.forEach(r=>{
+      const end=pDate(gEnd(r));
+      if(!end)return;
+      let startRaw=r['Inicio']||r['Start Date']||r['Fecha inicio']||r['Comienzo']||null;
+      let start=startRaw?pDate(startRaw):null;
+      if(!start){start=new Date(end);start.setDate(start.getDate()-14);}
+      const pct=gPct(r);
+      const pctN=pct===null?0:(pct<=1?Math.round(pct*100):Math.round(pct));
+      const isDone=pctN>=100;
+      const isLateTask=isLate(gEnd(r),pct);
+      entries.push({r,a,k,start,end,pctN,isDone,isLateTask});
+    });
+  });
+
+  if(!entries.length){
+    inner.innerHTML='<div class="gantt-empty">Sin datos con fechas — carga los Excel del área</div>';
+    return;
+  }
+
+  // Compute time range
+  const allDates=entries.flatMap(e=>[e.start,e.end]);
+  let minDate=new Date(Math.min(...allDates));
+  let maxDate=new Date(Math.max(...allDates));
+  if(ganttScale==='weeks'){
+    minDate=startOfWeek(minDate);minDate.setDate(minDate.getDate()-7);
+    maxDate=startOfWeek(maxDate);maxDate.setDate(maxDate.getDate()+14);
+  }else{
+    minDate=new Date(minDate.getFullYear(),minDate.getMonth()-1,1);
+    maxDate=new Date(maxDate.getFullYear(),maxDate.getMonth()+2,1);
+  }
+
+  // Build columns
+  const cols=[];
+  if(ganttScale==='weeks'){
+    let d=new Date(minDate);
+    while(d<maxDate){
+      cols.push({date:new Date(d),label:d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'})});
+      d.setDate(d.getDate()+7);
+    }
+  }else{
+    let d=new Date(minDate.getFullYear(),minDate.getMonth(),1);
+    while(d<maxDate){
+      cols.push({date:new Date(d),label:d.toLocaleDateString('es-CL',{month:'short',year:'2-digit'})});
+      d.setMonth(d.getMonth()+1);
+    }
+  }
+
+  const today=new Date();today.setHours(0,0,0,0);
+  const todayIdx=ganttScale==='weeks'
+    ?Math.floor((today-minDate)/(7*86400000))
+    :Math.floor((today.getFullYear()*12+today.getMonth())-(minDate.getFullYear()*12+minDate.getMonth()));
+
+  // Sort entries by start date
+  entries.sort((a,b)=>a.start-b.start);
+
+  // Group by area if 'all'
+  const byArea=new Map();
+  entries.forEach(e=>{
+    if(!byArea.has(e.k))byArea.set(e.k,[]);
+    byArea.get(e.k).push(e);
+  });
+
+  let html='<table class="gantt-table"><thead><tr>';
+  html+=`<th class="gcol-name">Tarea</th>`;
+  cols.forEach((c,i)=>{
+    const isToday=i===todayIdx;
+    html+=`<th class="${isToday?'gantt-today':''}" style="min-width:32px;width:32px">${c.label}</th>`;
+  });
+  html+='</tr></thead><tbody>';
+
+  const renderRow=(e)=>{
+    const startCol=ganttScale==='weeks'
+      ?Math.floor((e.start-minDate)/(7*86400000))
+      :Math.floor((e.start.getFullYear()*12+e.start.getMonth())-(minDate.getFullYear()*12+minDate.getMonth()));
+    const endCol=ganttScale==='weeks'
+      ?Math.ceil((e.end-minDate)/(7*86400000))
+      :Math.ceil((e.end.getFullYear()*12+e.end.getMonth()+1)-(minDate.getFullYear()*12+minDate.getMonth()));
+    const name=gName(e.r);
+    const title=`${name} — ${e.pctN}% · ${fDate(e.end)||'sin vto.'}`;
+
+    let row=`<tr title="${title.replace(/"/g,"'")}">`;
+    row+=`<td class="gname-cell"><span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${e.a.hex};margin-right:6px;flex-shrink:0;vertical-align:middle"></span>${name.substring(0,40)}${name.length>40?'…':''}</td>`;
+
+    cols.forEach((c,i)=>{
+      const isToday=i===todayIdx;
+      const inBar=i>=startCol&&i<endCol;
+      const isStart=i===startCol;
+      const isEnd=i===endCol-1;
+
+      if(inBar){
+        const rTL=isStart?'7px':'0';
+        const rTR=isEnd?'7px':'0';
+        const rBR=isEnd?'7px':'0';
+        const rBL=isStart?'7px':'0';
+        const barStyle=`background:${e.a.hex};left:${isStart?2:0}px;right:${isEnd?2:0}px;border-radius:${rTL} ${rTR} ${rBR} ${rBL}`;
+        row+=`<td class="gantt-bar-cell${isToday?' gantt-today':''}"><div class="gantt-bar${e.isDone?' done':''}${e.isLateTask?' late':''}" style="${barStyle}"></div></td>`;
+      }else{
+        row+=`<td class="${isToday?'gantt-today':''}" style="height:34px"></td>`;
+      }
+    });
+    row+='</tr>';
+    return row;
+  };
+
+  if(ganttArea==='all'){
+    byArea.forEach((aEntries,k)=>{
+      const a=AREAS[k];
+      html+=`<tr class="gantt-area-hdr"><td colspan="${cols.length+1}"><span style="margin-right:6px">${a.icon}</span>${a.name} (${aEntries.length})</td></tr>`;
+      aEntries.forEach(e=>html+=renderRow(e));
+    });
+  }else{
+    entries.forEach(e=>html+=renderRow(e));
+  }
+
+  html+='</tbody></table>';
+  inner.innerHTML=html;
+}
 
 // ═══════════════════════════════════════════════════════════
 // TOAST
