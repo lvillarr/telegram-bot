@@ -522,6 +522,51 @@ async def web_rag_query(request: Request):
     return {"chunks": chunks}
 
 
+@_web_app.post("/api/rag/chat")
+async def web_rag_chat(request: Request):
+    """Chat RAG especializado — responde SOLO desde documentos indexados, como _handle_nlm_query de Telegram."""
+    body     = await request.json()
+    question = body.get("question", "")
+    history  = body.get("history", [])
+    model    = body.get("model", "claude-sonnet-4-6")
+    if not question:
+        return {"error": "Falta question"}
+
+    loop   = asyncio.get_event_loop()
+    chunks = await loop.run_in_executor(None, rag.query, question)
+    if not chunks:
+        return {"answer": "🔍 Sin resultados en la base de conocimiento para esa consulta. Intenta reformular la pregunta o verifica que los documentos relevantes estén indexados.", "chunks": []}
+
+    rag_context = rag.build_context(question)
+    rag_system = (
+        "Eres el asistente de base de conocimiento de Arauco — Subgerencia de Mejora Continua.\n"
+        "Responde ÚNICAMENTE basado en los documentos del contexto.\n"
+        "Si la información no está en los documentos, indícalo claramente.\n\n"
+        "FORMATO — adapta según la complejidad:\n"
+        "- Encabezado: ━━ 📋 [título breve] ━━\n"
+        "- Párrafo introductorio si la respuesta lo amerita\n"
+        "- Secciones numeradas con emoji (1️⃣ 2️⃣ ...) solo si hay varios temas distintos\n"
+        "- Bullets 🔹 para listas de puntos\n"
+        "- **Negrita** para términos técnicos clave y valores críticos\n"
+        "- (FUENTE: archivo) al citar datos específicos del documento\n"
+        "- ⚠️ **Nota:** al final solo si hay limitaciones o información faltante\n"
+        "- Para preguntas simples, respuesta directa sin secciones"
+        + rag_context
+    )
+
+    hist = [_cap_msg(m) for m in history[-6:]]
+
+    try:
+        raw = await loop.run_in_executor(
+            None,
+            lambda: claude_response(rag_system, question, max_tokens=2000, model=model,
+                                    history=hist if hist else None)
+        )
+        return {"answer": raw, "chunks": chunks}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 @_web_app.post("/api/rag/index")
 async def web_rag_index(file: UploadFile = File(...)):
     content  = await file.read()
