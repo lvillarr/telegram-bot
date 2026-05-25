@@ -1153,31 +1153,48 @@ function buildSummaryHTML(){
   <div class="on-title">Resumen Semanal</div>
   <div class="on-meta">Semana del <b>${fmt(ws)}</b> al <b>${fmt(we)}</b><br>Generado el ${fmtLong(now)}</div>`;
 
+  const mkTaskM=(r)=>{
+    const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+    const isDone=pct===1||pct===100;
+    const end=gEnd(r);const ds=fDate(end);
+    const late=isLate(end,pct);const near=isNear(end);
+    const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
+    return`<div class="on-task">
+      <div class="on-chk${isDone?' done':''}">${isDone?'✓':''}</div>
+      <div>
+        <div class="on-task-name${isDone?' done':''}">${gName(r)}</div>
+        <div class="on-task-meta">
+          ${assign?`<span>👤 ${assign}</span>`:''}
+          ${ds?`<span class="${late?'late':near?'near':''}">${late?'⚠ Venció':'📅'} ${ds}</span>`:''}
+          ${pctN!==null&&!isDone?`<span>${pctN}%</span>`:''}
+          <span style="background:#f3f4f8;padding:1px 6px;border-radius:3px;font-size:10px">${gBucket(r)}</span>
+        </div>
+      </div>
+    </div>`;
+  };
   Object.entries(byArea).forEach(([k,{area,tasks}])=>{
     html+=`<div class="on-section" style="border-left-color:${aColors[k]||'#6b7280'}">
       <div class="on-sec-head" style="color:${aColors[k]||'#374151'}">
         <span>${area.icon}</span>${area.name}
         <span style="font-size:10px;font-weight:400;color:#9ca3af;text-transform:none;letter-spacing:0">(${tasks.length})</span>
       </div>`;
+    const byLbl=new Map();
     tasks.forEach(r=>{
-      const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
-      const isDone=pct===1||pct===100;
-      const end=gEnd(r);const ds=fDate(end);
-      const late=isLate(end,pct);const near=isNear(end);
-      const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
-      html+=`<div class="on-task">
-        <div class="on-chk${isDone?' done':''}">${isDone?'✓':''}</div>
-        <div>
-          <div class="on-task-name${isDone?' done':''}">${gName(r)}</div>
-          <div class="on-task-meta">
-            ${assign?`<span>👤 ${assign}</span>`:''}
-            ${ds?`<span class="${late?'late':near?'near':''}">${late?'⚠ Venció':'📅'} ${ds}</span>`:''}
-            ${pctN!==null&&!isDone?`<span>${pctN}%</span>`:''}
-            <span style="background:#f3f4f8;padding:1px 6px;border-radius:3px;font-size:10px">${gBucket(r)}</span>
-          </div>
-        </div>
-      </div>`;
+      const lbls=gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
+      const keys=lbls.length?lbls:['General'];
+      keys.forEach(lbl=>{
+        if(!byLbl.has(lbl))byLbl.set(lbl,[]);
+        if(!byLbl.get(lbl).find(x=>x===r))byLbl.get(lbl).push(r);
+      });
     });
+    if(byLbl.size===1&&byLbl.has('General')){
+      tasks.forEach(r=>html+=mkTaskM(r));
+    }else{
+      byLbl.forEach((lblTasks,lbl)=>{
+        html+=`<div style="font-size:11px;font-weight:700;color:#6b7280;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.4px">${lbl}</div>`;
+        lblTasks.forEach(r=>html+=mkTaskM(r));
+      });
+    }
     html+='</div>';
   });
 
@@ -1240,13 +1257,27 @@ function copySummary(){
 
   byArea.forEach(({area,items})=>{
     txt+=`*${area.icon} ${area.name}*\n`;
-    items.forEach(({r,ds,assign,status,pctN})=>{
-      const icon=status==='late'?'🔴':status==='ip'?'🔵':'⬜';
-      let line=`${icon} ${gName(r)}`;
-      if(pctN!==null&&pctN>0&&status!=='late')line+=` (${pctN}%)`;
-      if(ds)line+=` · ${status==='late'?'Venció':'Vence'}: ${ds}`;
-      if(assign)line+=` · ${assign}`;
-      txt+=line+'\n';
+    const byLbl=new Map();
+    items.forEach(item=>{
+      const lbls=gLabels(item.r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
+      const keys=lbls.length?lbls:['General'];
+      keys.forEach(lbl=>{
+        if(!byLbl.has(lbl))byLbl.set(lbl,[]);
+        if(!byLbl.get(lbl).find(x=>x===item))byLbl.get(lbl).push(item);
+      });
+    });
+    const flat=byLbl.size===1&&byLbl.has('General');
+    byLbl.forEach((lblItems,lbl)=>{
+      if(!flat)txt+=`  _${lbl}_\n`;
+      lblItems.forEach(({r,ds,assign,status,pctN})=>{
+        const icon=status==='late'?'🔴':status==='ip'?'🔵':'⬜';
+        const indent=flat?'':'  ';
+        let line=`${indent}${icon} ${gName(r)}`;
+        if(pctN!==null&&pctN>0&&status!=='late')line+=` (${pctN}%)`;
+        if(ds)line+=` · ${status==='late'?'Venció':'Vence'}: ${ds}`;
+        if(assign)line+=` · ${assign}`;
+        txt+=line+'\n';
+      });
     });
     txt+='\n';
   });

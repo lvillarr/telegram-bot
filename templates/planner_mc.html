@@ -1378,34 +1378,51 @@ function buildSummaryHTML(){
 
   // Sections per area
   const areaColors={eo:'#059669',td:'#2563eb',ai:'#7c3aed',id:'#0891b2',im:'#d97706'};
+  const mkTaskHTML=(r)=>{
+    const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+    const isDone=pct===1||pct===100;
+    const end=gEnd(r);const ds=fDate(end);
+    const late=isLate(end,pct);const near=isNear(end);
+    const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
+    const bucket=gBucket(r);
+    return`<div class="on-task">
+      <div class="on-chk${isDone?' done':''}">${isDone?'✓':''}</div>
+      <div class="on-task-body">
+        <div class="on-task-name${isDone?' done':''}">${gName(r)}</div>
+        <div class="on-task-meta">
+          ${assign?`<span>👤 ${assign}</span>`:''}
+          ${ds?`<span class="${late?'late':near?'near':''}">${late?'⚠ Venció':'📅'} ${ds}</span>`:''}
+          ${pctN!==null&&!isDone?`<span class="on-pct"><span class="on-pbar"><span style="display:block;height:100%;width:${pctN}%;background:${pctN<30?'#f59e0b':pctN<70?'#3b82f6':'#10b981'};border-radius:2px"></span></span>${pctN}%</span>`:''}
+          <span style="background:#f3f4f8;padding:1px 6px;border-radius:3px;font-size:10px">${bucket}</span>
+        </div>
+      </div>
+    </div>`;
+  };
   Object.entries(byArea).forEach(([key,{area,tasks}])=>{
     html+=`<div class="on-section" style="border-left-color:${areaColors[key]||'#6b7280'}">
       <div class="on-sec-head" style="color:${areaColors[key]||'#374151'}">
         <span class="on-sec-icon">${area.icon}</span>${area.name}
         <span style="font-size:10px;font-weight:400;color:#9ca3af;text-transform:none;letter-spacing:0">(${tasks.length} tarea${tasks.length!==1?'s':''})</span>
       </div>`;
+    // Sub-group by label
+    const byLbl=new Map();
     tasks.forEach(r=>{
-      const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
-      const isDone=pct===1||pct===100;
-      const end=gEnd(r);const ds=fDate(end);
-      const late=isLate(end,pct);const near=isNear(end);
-      const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
-      const bucket=gBucket(r);
-      html+=`<div class="on-task">
-        <div class="on-chk${isDone?' done':''}">
-          ${isDone?'✓':''}
-        </div>
-        <div class="on-task-body">
-          <div class="on-task-name${isDone?' done':''}">${gName(r)}</div>
-          <div class="on-task-meta">
-            ${assign?`<span>👤 ${assign}</span>`:''}
-            ${ds?`<span class="${late?'late':near?'near':''}">${late?'⚠ Venció':'📅'} ${ds}</span>`:''}
-            ${pctN!==null&&!isDone?`<span class="on-pct"><span class="on-pbar" style=""><span style="display:block;height:100%;width:${pctN}%;background:${pctN<30?'#f59e0b':pctN<70?'#3b82f6':'#10b981'};border-radius:2px"></span></span>${pctN}%</span>`:''}
-            <span style="background:#f3f4f8;padding:1px 6px;border-radius:3px;font-size:10px">${bucket}</span>
-          </div>
-        </div>
-      </div>`;
+      const lbls=gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
+      const keys=lbls.length?lbls:['General'];
+      keys.forEach(lbl=>{
+        if(!byLbl.has(lbl))byLbl.set(lbl,[]);
+        if(!byLbl.get(lbl).find(x=>x===r))byLbl.get(lbl).push(r);
+      });
     });
+    if(byLbl.size===1&&byLbl.has('General')){
+      // No labels — render flat
+      tasks.forEach(r=>html+=mkTaskHTML(r));
+    }else{
+      byLbl.forEach((lblTasks,lbl)=>{
+        html+=`<div style="font-size:11px;font-weight:700;color:#6b7280;margin:8px 0 4px;text-transform:uppercase;letter-spacing:.4px">${lbl}</div>`;
+        lblTasks.forEach(r=>html+=mkTaskHTML(r));
+      });
+    }
     html+='</div>';
   });
 
@@ -1478,13 +1495,28 @@ function copySummary(){
 
   byArea.forEach(({area,items})=>{
     txt+=`*${area.icon} ${area.name}*\n`;
-    items.forEach(({r,ds,assign,status,pctN})=>{
-      const icon=status==='late'?'🔴':status==='ip'?'🔵':'⬜';
-      let line=`${icon} ${gName(r)}`;
-      if(pctN!==null&&pctN>0&&status!=='late')line+=` (${pctN}%)`;
-      if(ds)line+=` · ${status==='late'?'Venció':'Vence'}: ${ds}`;
-      if(assign)line+=` · ${assign}`;
-      txt+=line+'\n';
+    // Sub-group by label
+    const byLbl=new Map();
+    items.forEach(item=>{
+      const lbls=gLabels(item.r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
+      const keys=lbls.length?lbls:['General'];
+      keys.forEach(lbl=>{
+        if(!byLbl.has(lbl))byLbl.set(lbl,[]);
+        if(!byLbl.get(lbl).find(x=>x===item))byLbl.get(lbl).push(item);
+      });
+    });
+    const flat=byLbl.size===1&&byLbl.has('General');
+    byLbl.forEach((lblItems,lbl)=>{
+      if(!flat)txt+=`  _${lbl}_\n`;
+      lblItems.forEach(({r,ds,assign,status,pctN})=>{
+        const icon=status==='late'?'🔴':status==='ip'?'🔵':'⬜';
+        const indent=flat?'':'  ';
+        let line=`${indent}${icon} ${gName(r)}`;
+        if(pctN!==null&&pctN>0&&status!=='late')line+=` (${pctN}%)`;
+        if(ds)line+=` · ${status==='late'?'Venció':'Vence'}: ${ds}`;
+        if(assign)line+=` · ${assign}`;
+        txt+=line+'\n';
+      });
     });
     txt+='\n';
   });
