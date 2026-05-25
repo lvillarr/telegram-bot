@@ -1040,15 +1040,18 @@ function renderAlerts(){
     lateEl.innerHTML=lateItems.slice(0,12).map(({r,area})=>{
       const ds=fDate(gEnd(r));const pctN=gPct(r);const pctD=pctN===null?null:(pctN<=1?Math.round(pctN*100):Math.round(pctN));
       const nm=gName(r).substring(0,55)+(gName(r).length>55?'…':'');
+      const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
+      const lbl=gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week')[0]||'';
+      const richText=`🔴 ${nm}${lbl?' ['+lbl+']':''}${assign?' · '+assign:''} · Venció: ${ds||'—'}${pctD!==null?' ('+pctD+'%)':''}`;
       return`<div class="risk-item" draggable="true" title="Arrastra al panel derecho para agregar a la semana"
-        data-drag-text="${nm.replace(/"/g,'&quot;')}"
+        data-drag-text="${richText.replace(/"/g,'&quot;')}"
         ondragstart="startDragRisk(event)"
         style="cursor:grab">
         <div class="risk-icon" style="background:${area.hex}22">${area.icon}</div>
         <div>
           <div class="risk-name">${nm}</div>
-          <div class="risk-desc">${area.name} · ${gBucket(r)}</div>
-          <div class="risk-due" style="color:#ef4444">Venció: ${ds||'—'} ${pctD!==null?'· '+pctD+'%':''}</div>
+          <div class="risk-desc">${area.name}${lbl?' · '+lbl:''} · ${gBucket(r)}</div>
+          <div class="risk-due" style="color:#ef4444">Venció: ${ds||'—'} ${pctD!==null?'· '+pctD+'%':''} ${assign?'· '+assign:''}</div>
         </div>
       </div>`;
     }).join('')+(lateItems.length>12?`<div style="text-align:center;font-size:11px;color:var(--muted);padding:8px">+${lateItems.length-12} más</div>`:'');
@@ -1058,13 +1061,18 @@ function renderAlerts(){
     weekEl.innerHTML=weekItems.map(({r,area})=>{
       const ds=fDate(gEnd(r));
       const nm=gName(r).substring(0,55)+(gName(r).length>55?'…':'');
+      const assign=gAssign(r).split(/[;,]/).filter(Boolean).map(s=>s.trim()).slice(0,2).join(', ');
+      const lbl=gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week')[0]||'';
+      const pct=gPct(r);const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+      const status=isLate(gEnd(r),pct)?'🔴':pctN&&pctN>0?'🔵':'⬜';
+      const richText=`${status} ${nm}${lbl?' ['+lbl+']':''}${assign?' · '+assign:''}${ds?' · '+(isLate(gEnd(r),pct)?'Venció':'Vence')+': '+ds:''}${pctN&&pctN>0?' ('+pctN+'%)':''}`;
       return`<div class="week-item" draggable="true" title="Arrastra al panel derecho"
-        data-drag-text="${nm.replace(/"/g,'&quot;')}"
+        data-drag-text="${richText.replace(/"/g,'&quot;')}"
         ondragstart="startDragRisk(event)" style="cursor:grab">
         <div class="week-area" style="background:${area.hex}"></div>
         <div>
           <div class="week-name">${nm}</div>
-          <div class="week-meta"><span style="font-size:10.5px;font-weight:700;color:${area.hex}">${area.name}</span><span>${gBucket(r)}</span>${ds?`<span>📅 ${ds}</span>`:''}</div>
+          <div class="week-meta"><span style="font-size:10.5px;font-weight:700;color:${area.hex}">${area.name}</span>${lbl?`<span>${lbl}</span>`:''}<span>${gBucket(r)}</span>${ds?`<span>📅 ${ds}</span>`:''} ${assign?`<span>👤 ${assign}</span>`:''}</div>
         </div>
       </div>`;
     }).join('');
@@ -1133,14 +1141,18 @@ async function wbDelete(id){
 }
 
 // Drag from left panel (risk items) to right panel
-let _dragText='',_dragSource='excel';
+let _dragText='',_dragSource='excel',_dragDropped=false;
 function startDragRisk(event){
   const el=event.currentTarget;
   const text=el.dataset.dragText||el.querySelector('.risk-name,.week-name')?.textContent||'';
   event.dataTransfer.setData('text/plain', text);
   event.dataTransfer.effectAllowed='copy';
+  _dragDropped=false;
   el.style.opacity='0.5';
-  el.addEventListener('dragend',()=>{el.style.opacity='';},{once:true});
+  el.addEventListener('dragend',()=>{
+    if(_dragDropped){el.style.display='none';}
+    else{el.style.opacity='';}
+  },{once:true});
 }
 
 async function dropToBoard(event){
@@ -1148,6 +1160,7 @@ async function dropToBoard(event){
   document.getElementById('week-panel').classList.remove('wb-drag-over');
   const text=event.dataTransfer.getData('text/plain').trim();
   if(!text)return;
+  _dragDropped=true;
   await wbAdd(text,'excel');
 }
 
@@ -1161,11 +1174,11 @@ function copyWeekPanel(){
   const ws=new Date(now);ws.setDate(now.getDate()-(dow===0?6:dow-1));
   const we=new Date(ws);we.setDate(ws.getDate()+6);
   const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
-  let txt=`📋 Semana ${fmt(ws)} – ${fmt(we)} — Abordaría esta semana\n\n`;
-  _wbItems.forEach(({text,done,source})=>{
+  let txt=`📋 Abordaría esta Semana — ${fmt(ws)} al ${fmt(we)}\n`;
+  txt+=`Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}\n\n`;
+  _wbItems.forEach(({text,done})=>{
     txt+=`${done?'☑':'☐'} ${text}\n`;
   });
-  txt+=`\n_Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}_`;
   navigator.clipboard.writeText(txt).then(()=>toast('✅ Copiado')).catch(()=>toast('Error al copiar'));
 }
 
