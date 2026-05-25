@@ -571,13 +571,21 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
           </div>
         </div>
         <div class="panel">
-          <div class="panel-title">
-            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="14" height="12" rx="1"/><path d="M5 1v2M11 1v2M1 6h14"/></svg>
-            Tareas marcadas "Abordaría esta Semana"
+          <div class="panel-title" style="justify-content:space-between">
+            <span style="display:flex;align-items:center;gap:6px">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="14" height="12" rx="1"/><path d="M5 1v2M11 1v2M1 6h14"/></svg>
+              Abordaría esta Semana
+            </span>
+            <button class="btn" style="font-size:11px;padding:3px 10px" onclick="copyWeekPanel()">📋 Copiar</button>
           </div>
           <div id="panel-week">
             <div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Sin datos cargados</div>
           </div>
+          <div style="display:flex;gap:6px;padding:8px 0 2px;border-top:1px solid #f3f4f6;margin-top:6px">
+            <input id="week-extra-input" type="text" placeholder="Agregar tarea manual..." style="flex:1;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;padding:5px 8px;outline:none" onkeydown="if(event.key==='Enter')addWeekExtra()">
+            <button class="btn" style="font-size:11px;padding:4px 10px" onclick="addWeekExtra()">+ Agregar</button>
+          </div>
+          <div id="panel-week-extra"></div>
         </div>
       </div>
     </div>
@@ -1039,17 +1047,100 @@ function renderAlerts(){
   }
   if(!weekItems.length){weekEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Sin tareas marcadas para esta semana</div>'}
   else{
-    weekEl.innerHTML=weekItems.slice(0,12).map(({r,area})=>{
+    weekEl.innerHTML=weekItems.map(({r,area},i)=>{
       const ds=fDate(gEnd(r));
-      return`<div class="week-item">
-        <div class="week-area" style="background:${area.hex}"></div>
+      const done=weekDone.has('w_'+i);
+      return`<div class="week-item" style="opacity:${done?0.45:1}">
+        <input type="checkbox" style="margin-top:2px;accent-color:#4f46e5;cursor:pointer;flex-shrink:0" ${done?'checked':''} onchange="toggleWeekDone('w_${i}',this)">
         <div>
-          <div class="week-name">${gName(r).substring(0,55)}${gName(r).length>55?'…':''}</div>
+          <div class="week-name" style="${done?'text-decoration:line-through':''}">${gName(r).substring(0,55)}${gName(r).length>55?'…':''}</div>
           <div class="week-meta"><span style="font-size:10.5px;font-weight:700;color:${area.hex}">${area.name}</span><span>${gBucket(r)}</span>${ds?`<span>📅 ${ds}</span>`:''}</div>
         </div>
       </div>`;
-    }).join('')+(weekItems.length>12?`<div style="text-align:center;font-size:11px;color:var(--muted);padding:8px">+${weekItems.length-12} más</div>`:'');
+    }).join('');
   }
+  renderWeekExtra();
+}
+
+// ── WEEK PANEL EXTRA ──────────────────────────────────────
+let weekDone=new Set(JSON.parse(localStorage.getItem('weekDone')||'[]'));
+let weekExtra=JSON.parse(localStorage.getItem('weekExtra')||'[]');
+
+function saveWeekState(){
+  localStorage.setItem('weekDone',JSON.stringify([...weekDone]));
+  localStorage.setItem('weekExtra',JSON.stringify(weekExtra));
+}
+
+function toggleWeekDone(key,cb){
+  if(cb.checked)weekDone.add(key);else weekDone.delete(key);
+  saveWeekState();
+  renderAlerts();
+}
+
+function addWeekExtra(){
+  const inp=document.getElementById('week-extra-input');
+  const val=inp.value.trim();
+  if(!val)return;
+  weekExtra.push({text:val,done:false});
+  inp.value='';
+  saveWeekState();
+  renderWeekExtra();
+}
+
+function toggleExtraDone(i,cb){
+  weekExtra[i].done=cb.checked;
+  saveWeekState();
+  renderWeekExtra();
+}
+
+function removeExtra(i){
+  weekExtra.splice(i,1);
+  saveWeekState();
+  renderWeekExtra();
+}
+
+function renderWeekExtra(){
+  const el=document.getElementById('panel-week-extra');
+  if(!el)return;
+  if(!weekExtra.length){el.innerHTML='';return;}
+  el.innerHTML=weekExtra.map((t,i)=>`<div class="week-item" style="opacity:${t.done?0.45:1}">
+    <input type="checkbox" style="margin-top:2px;accent-color:#4f46e5;cursor:pointer;flex-shrink:0" ${t.done?'checked':''} onchange="toggleExtraDone(${i},this)">
+    <div style="flex:1">
+      <div class="week-name" style="${t.done?'text-decoration:line-through':''}">${t.text}</div>
+      <div class="week-meta"><span style="font-size:10px;color:#9ca3af">Manual</span></div>
+    </div>
+    <button onclick="removeExtra(${i})" style="background:none;border:none;cursor:pointer;color:#d1d5db;font-size:14px;padding:0 4px" title="Eliminar">×</button>
+  </div>`).join('');
+}
+
+function copyWeekPanel(){
+  const now=new Date();
+  const dow=now.getDay();
+  const ws=new Date(now);ws.setDate(now.getDate()-(dow===0?6:dow-1));
+  const we=new Date(ws);we.setDate(ws.getDate()+6);
+  const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
+
+  // Collect from DOM — same order as rendered
+  const fromExcel=[];
+  document.querySelectorAll('#panel-week .week-item').forEach((el,i)=>{
+    const cb=el.querySelector('input[type=checkbox]');
+    const name=el.querySelector('.week-name')?.textContent||'';
+    const meta=el.querySelector('.week-meta')?.textContent||'';
+    fromExcel.push({name:name.trim(),meta:meta.trim(),done:cb?.checked||false});
+  });
+
+  let txt=`📋 Semana ${fmt(ws)} – ${fmt(we)} — Abordaría esta semana\n\n`;
+  fromExcel.forEach(({name,meta,done})=>{
+    txt+=`${done?'☑':'☐'} ${name}`;
+    if(meta)txt+=`  [${meta}]`;
+    txt+='\n';
+  });
+  if(weekExtra.length){
+    if(fromExcel.length)txt+='\n';
+    weekExtra.forEach(({text,done})=>{txt+=`${done?'☑':'☐'} ${text}\n`;});
+  }
+  txt+=`\n_Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}_`;
+  navigator.clipboard.writeText(txt).then(()=>toast('✅ Copiado')).catch(()=>toast('Error al copiar'));
 }
 
 // ═══════════════════════════════════════════════════════════
