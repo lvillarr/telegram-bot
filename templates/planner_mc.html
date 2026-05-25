@@ -1288,7 +1288,20 @@ function renderGantt(){
       aEntries.forEach(e=>html+=renderRow(e));
     });
   }else{
-    entries.forEach(e=>html+=renderRow(e));
+    // Group by label within area
+    const byLabel=new Map();
+    entries.forEach(e=>{
+      const lbls=gLabels(e.r).split(';').map(s=>s.trim()).filter(Boolean);
+      const keys=lbls.length?lbls:['Sin etiqueta'];
+      keys.forEach(lbl=>{
+        if(!byLabel.has(lbl))byLabel.set(lbl,[]);
+        if(!byLabel.get(lbl).find(x=>x===e))byLabel.get(lbl).push(e);
+      });
+    });
+    byLabel.forEach((lEntries,lbl)=>{
+      html+=`<tr class="gantt-area-hdr"><td colspan="${cols.length+1}" style="font-size:11px">${lbl} (${lEntries.length})</td></tr>`;
+      lEntries.forEach(e=>html+=renderRow(e));
+    });
   }
 
   html+='</tbody></table>';

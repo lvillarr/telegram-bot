@@ -1010,7 +1010,7 @@ function renderGanttM(){
   cols.forEach((c,i)=>{html+=`<th class="gcell-w${i===todayIdx?' g-today-col':''}">${c.label}</th>`;});
   html+='</tr></thead><tbody>';
 
-  entries.forEach(e=>{
+  const renderRowM=(e)=>{
     const startCol=ganttScaleM==='weeks'
       ?Math.floor((e.start-minDate)/(7*86400000))
       :Math.floor((e.start.getFullYear()*12+e.start.getMonth())-(minDate.getFullYear()*12+minDate.getMonth()));
@@ -1018,20 +1018,44 @@ function renderGanttM(){
       ?Math.ceil((e.end-minDate)/(7*86400000))
       :Math.ceil((e.end.getFullYear()*12+e.end.getMonth()+1)-(minDate.getFullYear()*12+minDate.getMonth()));
     const name=gName(e.r);
-    html+=`<tr><td class="gc"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${e.a.hex};margin-right:5px;vertical-align:middle"></span>${name.substring(0,28)}${name.length>28?'…':''}</td>`;
+    let row=`<tr><td class="gc"><span style="display:inline-block;width:6px;height:6px;border-radius:50%;background:${e.a.hex};margin-right:5px;vertical-align:middle"></span>${name.substring(0,28)}${name.length>28?'…':''}</td>`;
     cols.forEach((c,i)=>{
       const inBar=i>=startCol&&i<endCol;
       const isStart=i===startCol,isEnd=i===endCol-1;
       const isTd=i===todayIdx;
       if(inBar){
         const br=`${isStart?'6px':'0'} ${isEnd?'6px':'0'} ${isEnd?'6px':'0'} ${isStart?'6px':'0'}`;
-        html+=`<td class="gcell-w${isTd?' g-today-col':''}"><div class="gbar-m${e.isDone?' done':''}${e.isLateTask?' late-m':''}" style="background:${e.a.hex};border-radius:${br};left:${isStart?1:0}px;right:${isEnd?1:0}px"></div></td>`;
+        row+=`<td class="gcell-w${isTd?' g-today-col':''}"><div class="gbar-m${e.isDone?' done':''}${e.isLateTask?' late-m':''}" style="background:${e.a.hex};border-radius:${br};left:${isStart?1:0}px;right:${isEnd?1:0}px"></div></td>`;
       }else{
-        html+=`<td class="gcell-w${isTd?' g-today-col':''}"></td>`;
+        row+=`<td class="gcell-w${isTd?' g-today-col':''}"></td>`;
       }
     });
-    html+='</tr>';
-  });
+    row+='</tr>';
+    return row;
+  };
+
+  if(ganttAreaM==='all'&&(curArea==='exec'||curArea==='alerts')){
+    const byArea=new Map();
+    entries.forEach(e=>{if(!byArea.has(e.a))byArea.set(e.a,[]);byArea.get(e.a).push(e);});
+    byArea.forEach((aEntries,area)=>{
+      html+=`<tr><td colspan="${cols.length+1}" style="background:#f3f4f8;font-size:10px;font-weight:700;padding:4px 8px;color:#374151">${area.icon} ${area.name} (${aEntries.length})</td></tr>`;
+      aEntries.forEach(e=>html+=renderRowM(e));
+    });
+  }else{
+    const byLabel=new Map();
+    entries.forEach(e=>{
+      const lbls=gLabels(e.r).split(';').map(s=>s.trim()).filter(Boolean);
+      const keys=lbls.length?lbls:['Sin etiqueta'];
+      keys.forEach(lbl=>{
+        if(!byLabel.has(lbl))byLabel.set(lbl,[]);
+        if(!byLabel.get(lbl).find(x=>x===e))byLabel.get(lbl).push(e);
+      });
+    });
+    byLabel.forEach((lEntries,lbl)=>{
+      html+=`<tr><td colspan="${cols.length+1}" style="background:#f3f4f8;font-size:10px;font-weight:700;padding:4px 8px;color:#374151">${lbl} (${lEntries.length})</td></tr>`;
+      lEntries.forEach(e=>html+=renderRowM(e));
+    });
+  }
   html+='</tbody></table>';
   inner.innerHTML=html;
 }
