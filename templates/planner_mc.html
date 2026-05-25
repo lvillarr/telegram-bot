@@ -1077,9 +1077,11 @@ let _wbItems=[];
 async function wbLoad(){
   try{
     const r=await fetch('/api/week-board');
+    if(!r.ok){console.error('wbLoad HTTP',r.status);_wbItems=[];wbRender();return;}
     const d=await r.json();
+    if(d.error){console.error('wbLoad error',d.error);_wbItems=[];wbRender();return;}
     _wbItems=d.items||[];
-  }catch(e){_wbItems=[];}
+  }catch(e){console.error('wbLoad fetch failed',e);_wbItems=[];}
   wbRender();
 }
 
@@ -1105,12 +1107,16 @@ function wbRender(){
 
 async function wbAdd(text,source){
   const inp=document.getElementById('week-extra-input');
-  const val=(text||inp.value).trim();
+  const val=(text!==undefined&&text!==null&&text!=='')?String(text).trim():inp.value.trim();
   const src=source||'manual';
-  if(!val)return;
-  const r=await fetch('/api/week-board',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:val,source:src})});
-  const d=await r.json();
-  if(d.ok){inp.value='';await wbLoad();}
+  if(!val){toast('Escribe una tarea primero');return;}
+  try{
+    const r=await fetch('/api/week-board',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:val,source:src})});
+    if(!r.ok){toast('Error servidor: '+r.status);return;}
+    const d=await r.json();
+    if(d.ok){inp.value='';await wbLoad();}
+    else toast('Error: '+(d.error||'desconocido'));
+  }catch(e){toast('Error de red: '+e.message);}
 }
 
 async function wbToggle(id,cb){
