@@ -572,8 +572,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
           </div>
         </div>
         <div class="panel" id="week-panel"
-          ondragover="event.preventDefault();event.currentTarget.classList.add('wb-drag-over')"
-          ondragleave="event.currentTarget.classList.remove('wb-drag-over')"
+          ondragover="event.preventDefault();document.getElementById('week-panel').classList.add('wb-drag-over')"
+          ondragleave="if(!document.getElementById('week-panel').contains(event.relatedTarget))document.getElementById('week-panel').classList.remove('wb-drag-over')"
           ondrop="dropToBoard(event)">
           <div class="panel-title" style="justify-content:space-between">
             <span style="display:flex;align-items:center;gap:6px">
@@ -1127,18 +1127,19 @@ async function wbDelete(id){
 // Drag from left panel (risk items) to right panel
 let _dragText='',_dragSource='excel';
 function startDragRisk(event,text){
-  _dragText=text;_dragSource='excel';
+  event.dataTransfer.setData('text/plain', text);
   event.dataTransfer.effectAllowed='copy';
-  event.target.style.opacity='0.5';
-  event.target.addEventListener('dragend',()=>{event.target.style.opacity='';},{once:true});
+  const el=event.currentTarget;
+  el.style.opacity='0.5';
+  el.addEventListener('dragend',()=>{el.style.opacity='';},{once:true});
 }
 
 async function dropToBoard(event){
   event.preventDefault();
   document.getElementById('week-panel').classList.remove('wb-drag-over');
-  if(!_dragText)return;
-  await wbAdd(_dragText,_dragSource);
-  _dragText='';
+  const text=event.dataTransfer.getData('text/plain').trim();
+  if(!text)return;
+  await wbAdd(text,'excel');
 }
 
 // Drag between items inside board (reorder)
