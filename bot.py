@@ -351,6 +351,7 @@ print(f"[HTTP] FastAPI en 0.0.0.0:{_HTTP_PORT}  |  base: {PUBLIC_BASE}")
 # ── Historial compartido en SQLite ────────────────────────────────────────────
 _DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                         "proyecto_claude", "datos", "arauco_mc.db")
+os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
 
 
 def _db_init():
