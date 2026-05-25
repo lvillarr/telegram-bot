@@ -1292,11 +1292,9 @@ function renderGantt(){
     const byLabel=new Map();
     entries.forEach(e=>{
       const lbls=gLabels(e.r).split(';').map(s=>s.trim()).filter(Boolean);
-      const keys=lbls.length?lbls:['Sin etiqueta'];
-      keys.forEach(lbl=>{
-        if(!byLabel.has(lbl))byLabel.set(lbl,[]);
-        if(!byLabel.get(lbl).find(x=>x===e))byLabel.get(lbl).push(e);
-      });
+      const lbl=lbls.length?lbls[0]:'Sin etiqueta';
+      if(!byLabel.has(lbl))byLabel.set(lbl,[]);
+      byLabel.get(lbl).push(e);
     });
     byLabel.forEach((lEntries,lbl)=>{
       html+=`<tr class="gantt-area-hdr"><td colspan="${cols.length+1}" style="font-size:11px">${lbl} (${lEntries.length})</td></tr>`;
@@ -1408,11 +1406,9 @@ function buildSummaryHTML(){
     const byLbl=new Map();
     tasks.forEach(r=>{
       const lbls=gLabels(r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
-      const keys=lbls.length?lbls:['General'];
-      keys.forEach(lbl=>{
-        if(!byLbl.has(lbl))byLbl.set(lbl,[]);
-        if(!byLbl.get(lbl).find(x=>x===r))byLbl.get(lbl).push(r);
-      });
+      const lbl=lbls.length?lbls[0]:'General';
+      if(!byLbl.has(lbl))byLbl.set(lbl,[]);
+      byLbl.get(lbl).push(r);
     });
     if(byLbl.size===1&&byLbl.has('General')){
       // No labels — render flat
@@ -1499,11 +1495,9 @@ function copySummary(){
     const byLbl=new Map();
     items.forEach(item=>{
       const lbls=gLabels(item.r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
-      const keys=lbls.length?lbls:['General'];
-      keys.forEach(lbl=>{
-        if(!byLbl.has(lbl))byLbl.set(lbl,[]);
-        if(!byLbl.get(lbl).find(x=>x===item))byLbl.get(lbl).push(item);
-      });
+      const lbl=lbls.length?lbls[0]:'General';
+      if(!byLbl.has(lbl))byLbl.set(lbl,[]);
+      byLbl.get(lbl).push(item);
     });
     const flat=byLbl.size===1&&byLbl.has('General');
     byLbl.forEach((lblItems,lbl)=>{
