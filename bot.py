@@ -473,7 +473,7 @@ def _week_board_init():
                     text     TEXT NOT NULL,
                     source   TEXT DEFAULT 'manual',
                     done     INTEGER DEFAULT 0,
-                    ts       DATETIME DEFAULT (datetime('now','localtime'))
+                    ts       DATETIME DEFAULT CURRENT_TIMESTAMP
                 )
             """)
             con.execute("CREATE INDEX IF NOT EXISTS idx_wb_week ON week_board(week_key)")
