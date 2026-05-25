@@ -1041,7 +1041,8 @@ function renderAlerts(){
       const ds=fDate(gEnd(r));const pctN=gPct(r);const pctD=pctN===null?null:(pctN<=1?Math.round(pctN*100):Math.round(pctN));
       const nm=gName(r).substring(0,55)+(gName(r).length>55?'…':'');
       return`<div class="risk-item" draggable="true" title="Arrastra al panel derecho para agregar a la semana"
-        ondragstart="startDragRisk(event,'${nm.replace(/'/g,'&#39;')}')"
+        data-drag-text="${nm.replace(/"/g,'&quot;')}"
+        ondragstart="startDragRisk(event)"
         style="cursor:grab">
         <div class="risk-icon" style="background:${area.hex}22">${area.icon}</div>
         <div>
@@ -1058,7 +1059,8 @@ function renderAlerts(){
       const ds=fDate(gEnd(r));
       const nm=gName(r).substring(0,55)+(gName(r).length>55?'…':'');
       return`<div class="week-item" draggable="true" title="Arrastra al panel derecho"
-        ondragstart="startDragRisk(event,'${nm.replace(/'/g,'&#39;')}')" style="cursor:grab">
+        data-drag-text="${nm.replace(/"/g,'&quot;')}"
+        ondragstart="startDragRisk(event)" style="cursor:grab">
         <div class="week-area" style="background:${area.hex}"></div>
         <div>
           <div class="week-name">${nm}</div>
@@ -1126,10 +1128,11 @@ async function wbDelete(id){
 
 // Drag from left panel (risk items) to right panel
 let _dragText='',_dragSource='excel';
-function startDragRisk(event,text){
+function startDragRisk(event){
+  const el=event.currentTarget;
+  const text=el.dataset.dragText||el.querySelector('.risk-name,.week-name')?.textContent||'';
   event.dataTransfer.setData('text/plain', text);
   event.dataTransfer.effectAllowed='copy';
-  const el=event.currentTarget;
   el.style.opacity='0.5';
   el.addEventListener('dragend',()=>{el.style.opacity='';},{once:true});
 }
