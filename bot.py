@@ -460,6 +460,96 @@ def _detect_correction(text: str) -> bool:
     return bool(_CORRECTION_RE.search(text))
 
 
+# ── Week Board (panel semana editable) ───────────────────────────────────────
+
+def _week_board_init():
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            con.execute("""
+                CREATE TABLE IF NOT EXISTS week_board (
+                    id       INTEGER PRIMARY KEY AUTOINCREMENT,
+                    week_key TEXT NOT NULL,
+                    pos      INTEGER DEFAULT 0,
+                    text     TEXT NOT NULL,
+                    source   TEXT DEFAULT 'manual',
+                    done     INTEGER DEFAULT 0,
+                    ts       DATETIME DEFAULT (datetime('now','localtime'))
+                )
+            """)
+            con.execute("CREATE INDEX IF NOT EXISTS idx_wb_week ON week_board(week_key)")
+            con.commit()
+    except Exception as e:
+        print(f"[DB] week_board init error: {e}")
+
+
+def _week_key() -> str:
+    from datetime import date, timedelta
+    today = date.today()
+    dow = today.weekday()
+    monday = today - timedelta(days=dow)
+    return monday.strftime("%Y-W%V")
+
+
+@_web_app.get("/api/week-board")
+async def get_week_board():
+    wk = _week_key()
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            rows = con.execute(
+                "SELECT id, text, source, done, pos FROM week_board WHERE week_key=? ORDER BY pos, id",
+                (wk,)
+            ).fetchall()
+        return {"week": wk, "items": [{"id": r[0], "text": r[1], "source": r[2], "done": bool(r[3]), "pos": r[4]} for r in rows]}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_web_app.post("/api/week-board")
+async def post_week_board(request: Request):
+    body = await request.json()
+    text = (body.get("text") or "").strip()
+    source = body.get("source", "manual")
+    if not text:
+        return {"error": "text requerido"}
+    wk = _week_key()
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            cur = con.execute(
+                "INSERT INTO week_board (week_key, text, source) VALUES (?,?,?)",
+                (wk, text, source)
+            )
+            con.commit()
+        return {"ok": True, "id": cur.lastrowid}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_web_app.patch("/api/week-board/{item_id}")
+async def patch_week_board(item_id: int, request: Request):
+    body = await request.json()
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            if "done" in body:
+                con.execute("UPDATE week_board SET done=? WHERE id=?", (1 if body["done"] else 0, item_id))
+            if "pos" in body:
+                con.execute("UPDATE week_board SET pos=? WHERE id=?", (body["pos"], item_id))
+            con.commit()
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+@_web_app.delete("/api/week-board/{item_id}")
+async def delete_week_board(item_id: int):
+    try:
+        with sqlite3.connect(_DB_PATH) as con:
+            con.execute("DELETE FROM week_board WHERE id=?", (item_id,))
+            con.commit()
+        return {"ok": True}
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def _extract_lesson_rule(correction_msg: str, last_bot_msg: str) -> str:
     """Llama a Haiku para extraer una regla corta de la corrección."""
     try:
@@ -4523,4 +4613,5 @@ app.add_handler(MessageHandler(filters.PHOTO, handle_image))
 
 _db_init()
 _lessons_init()
+_week_board_init()
 app.run_polling(drop_pending_updates=True)

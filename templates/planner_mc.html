@@ -160,6 +160,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
 .risk-due{font-size:10.5px;font-weight:700;margin-top:3px}
 .week-item{display:flex;align-items:flex-start;gap:10px;padding:7px 0;border-bottom:1px solid #f3f4f8}
 .week-item:last-child{border-bottom:none}
+.wb-drag-over{background:#ede9fe!important;border:2px dashed #4f46e5!important;border-radius:8px}
 .week-area{width:5px;border-radius:2px;align-self:stretch;flex-shrink:0;margin-top:2px}
 .week-name{font-size:11.5px;font-weight:500;color:var(--text);line-height:1.4}
 .week-meta{font-size:10.5px;color:var(--muted);margin-top:2px;display:flex;align-items:center;gap:6px}
@@ -570,7 +571,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
             <div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Sin datos cargados</div>
           </div>
         </div>
-        <div class="panel">
+        <div class="panel" id="week-panel"
+          ondragover="event.preventDefault();event.currentTarget.classList.add('wb-drag-over')"
+          ondragleave="event.currentTarget.classList.remove('wb-drag-over')"
+          ondrop="dropToBoard(event)">
           <div class="panel-title" style="justify-content:space-between">
             <span style="display:flex;align-items:center;gap:6px">
               <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="14" height="12" rx="1"/><path d="M5 1v2M11 1v2M1 6h14"/></svg>
@@ -581,11 +585,11 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);display:flex
           <div id="panel-week">
             <div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Sin datos cargados</div>
           </div>
+          <div id="wb-list" style="min-height:40px"></div>
           <div style="display:flex;gap:6px;padding:8px 0 2px;border-top:1px solid #f3f4f6;margin-top:6px">
-            <input id="week-extra-input" type="text" placeholder="Agregar tarea manual..." style="flex:1;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;padding:5px 8px;outline:none" onkeydown="if(event.key==='Enter')addWeekExtra()">
-            <button class="btn" style="font-size:11px;padding:4px 10px" onclick="addWeekExtra()">+ Agregar</button>
+            <input id="week-extra-input" type="text" placeholder="Agregar tarea o arrastrar desde la izquierda..." style="flex:1;font-size:12px;border:1px solid #e5e7eb;border-radius:6px;padding:5px 8px;outline:none" onkeydown="if(event.key==='Enter')wbAdd()">
+            <button class="btn" style="font-size:11px;padding:4px 10px" onclick="wbAdd()">+ Agregar</button>
           </div>
-          <div id="panel-week-extra"></div>
         </div>
       </div>
     </div>
@@ -855,7 +859,7 @@ function setExecTab(tab,btn){
     document.getElementById('etab-'+t).style.display=t===tab?'':'none';
   });
   if(tab==='iniciativas')renderInitiatives();
-  if(tab==='alertas')renderAlerts();
+  if(tab==='alertas'){renderAlerts();wbLoad();}
 }
 function setPlanView(v,btn){
   curPlanView=v;
@@ -1035,10 +1039,13 @@ function renderAlerts(){
   else{
     lateEl.innerHTML=lateItems.slice(0,12).map(({r,area})=>{
       const ds=fDate(gEnd(r));const pctN=gPct(r);const pctD=pctN===null?null:(pctN<=1?Math.round(pctN*100):Math.round(pctN));
-      return`<div class="risk-item">
+      const nm=gName(r).substring(0,55)+(gName(r).length>55?'…':'');
+      return`<div class="risk-item" draggable="true" title="Arrastra al panel derecho para agregar a la semana"
+        ondragstart="startDragRisk(event,'${nm.replace(/'/g,'&#39;')}')"
+        style="cursor:grab">
         <div class="risk-icon" style="background:${area.hex}22">${area.icon}</div>
         <div>
-          <div class="risk-name">${gName(r).substring(0,55)}${gName(r).length>55?'…':''}</div>
+          <div class="risk-name">${nm}</div>
           <div class="risk-desc">${area.name} · ${gBucket(r)}</div>
           <div class="risk-due" style="color:#ef4444">Venció: ${ds||'—'} ${pctD!==null?'· '+pctD+'%':''}</div>
         </div>
@@ -1047,71 +1054,96 @@ function renderAlerts(){
   }
   if(!weekItems.length){weekEl.innerHTML='<div style="text-align:center;padding:20px;color:var(--muted);font-size:12px">Sin tareas marcadas para esta semana</div>'}
   else{
-    weekEl.innerHTML=weekItems.map(({r,area},i)=>{
+    weekEl.innerHTML=weekItems.map(({r,area})=>{
       const ds=fDate(gEnd(r));
-      const done=weekDone.has('w_'+i);
-      return`<div class="week-item" style="opacity:${done?0.45:1}">
-        <input type="checkbox" style="margin-top:2px;accent-color:#4f46e5;cursor:pointer;flex-shrink:0" ${done?'checked':''} onchange="toggleWeekDone('w_${i}',this)">
+      const nm=gName(r).substring(0,55)+(gName(r).length>55?'…':'');
+      return`<div class="week-item" draggable="true" title="Arrastra al panel derecho"
+        ondragstart="startDragRisk(event,'${nm.replace(/'/g,'&#39;')}')" style="cursor:grab">
+        <div class="week-area" style="background:${area.hex}"></div>
         <div>
-          <div class="week-name" style="${done?'text-decoration:line-through':''}">${gName(r).substring(0,55)}${gName(r).length>55?'…':''}</div>
+          <div class="week-name">${nm}</div>
           <div class="week-meta"><span style="font-size:10.5px;font-weight:700;color:${area.hex}">${area.name}</span><span>${gBucket(r)}</span>${ds?`<span>📅 ${ds}</span>`:''}</div>
         </div>
       </div>`;
     }).join('');
   }
-  renderWeekExtra();
 }
 
-// ── WEEK PANEL EXTRA ──────────────────────────────────────
-let weekDone=new Set(JSON.parse(localStorage.getItem('weekDone')||'[]'));
-let weekExtra=JSON.parse(localStorage.getItem('weekExtra')||'[]');
+// ── WEEK BOARD (server-side) ───────────────────────────────
+let _wbItems=[];
 
-function saveWeekState(){
-  localStorage.setItem('weekDone',JSON.stringify([...weekDone]));
-  localStorage.setItem('weekExtra',JSON.stringify(weekExtra));
+async function wbLoad(){
+  try{
+    const r=await fetch('/api/week-board');
+    const d=await r.json();
+    _wbItems=d.items||[];
+  }catch(e){_wbItems=[];}
+  wbRender();
 }
 
-function toggleWeekDone(key,cb){
-  if(cb.checked)weekDone.add(key);else weekDone.delete(key);
-  saveWeekState();
-  renderAlerts();
-}
-
-function addWeekExtra(){
-  const inp=document.getElementById('week-extra-input');
-  const val=inp.value.trim();
-  if(!val)return;
-  weekExtra.push({text:val,done:false});
-  inp.value='';
-  saveWeekState();
-  renderWeekExtra();
-}
-
-function toggleExtraDone(i,cb){
-  weekExtra[i].done=cb.checked;
-  saveWeekState();
-  renderWeekExtra();
-}
-
-function removeExtra(i){
-  weekExtra.splice(i,1);
-  saveWeekState();
-  renderWeekExtra();
-}
-
-function renderWeekExtra(){
-  const el=document.getElementById('panel-week-extra');
+function wbRender(){
+  const el=document.getElementById('wb-list');
   if(!el)return;
-  if(!weekExtra.length){el.innerHTML='';return;}
-  el.innerHTML=weekExtra.map((t,i)=>`<div class="week-item" style="opacity:${t.done?0.45:1}">
-    <input type="checkbox" style="margin-top:2px;accent-color:#4f46e5;cursor:pointer;flex-shrink:0" ${t.done?'checked':''} onchange="toggleExtraDone(${i},this)">
-    <div style="flex:1">
-      <div class="week-name" style="${t.done?'text-decoration:line-through':''}">${t.text}</div>
-      <div class="week-meta"><span style="font-size:10px;color:#9ca3af">Manual</span></div>
-    </div>
-    <button onclick="removeExtra(${i})" style="background:none;border:none;cursor:pointer;color:#d1d5db;font-size:14px;padding:0 4px" title="Eliminar">×</button>
-  </div>`).join('');
+  if(!_wbItems.length){
+    el.innerHTML='<div style="text-align:center;padding:12px;color:var(--muted);font-size:11px;border:2px dashed #e5e7eb;border-radius:8px;margin:4px 0">Arrastra tareas desde la izquierda o agrega manualmente</div>';
+    return;
+  }
+  el.innerHTML=_wbItems.map(t=>`
+    <div class="week-item wb-row" data-id="${t.id}" style="opacity:${t.done?0.45:1};cursor:grab"
+      draggable="true" ondragstart="wbDragStart(event,${t.id})">
+      <input type="checkbox" style="margin-top:2px;accent-color:#4f46e5;cursor:pointer;flex-shrink:0" ${t.done?'checked':''}
+        onchange="wbToggle(${t.id},this)">
+      <div style="flex:1">
+        <div class="week-name" style="${t.done?'text-decoration:line-through':''}">${t.text}</div>
+        <div class="week-meta"><span style="font-size:10px;color:${t.source==='manual'?'#9ca3af':'#4f46e5'}">${t.source==='manual'?'Manual':'Excel'}</span></div>
+      </div>
+      <button onclick="wbDelete(${t.id})" style="background:none;border:none;cursor:pointer;color:#d1d5db;font-size:16px;padding:0 4px;line-height:1" title="Eliminar">×</button>
+    </div>`).join('');
 }
+
+async function wbAdd(text,source){
+  const inp=document.getElementById('week-extra-input');
+  const val=(text||inp.value).trim();
+  const src=source||'manual';
+  if(!val)return;
+  const r=await fetch('/api/week-board',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({text:val,source:src})});
+  const d=await r.json();
+  if(d.ok){inp.value='';await wbLoad();}
+}
+
+async function wbToggle(id,cb){
+  await fetch(`/api/week-board/${id}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({done:cb.checked})});
+  const item=_wbItems.find(t=>t.id===id);
+  if(item)item.done=cb.checked;
+  wbRender();
+}
+
+async function wbDelete(id){
+  await fetch(`/api/week-board/${id}`,{method:'DELETE'});
+  _wbItems=_wbItems.filter(t=>t.id!==id);
+  wbRender();
+}
+
+// Drag from left panel (risk items) to right panel
+let _dragText='',_dragSource='excel';
+function startDragRisk(event,text){
+  _dragText=text;_dragSource='excel';
+  event.dataTransfer.effectAllowed='copy';
+  event.target.style.opacity='0.5';
+  event.target.addEventListener('dragend',()=>{event.target.style.opacity='';},{once:true});
+}
+
+async function dropToBoard(event){
+  event.preventDefault();
+  document.getElementById('week-panel').classList.remove('wb-drag-over');
+  if(!_dragText)return;
+  await wbAdd(_dragText,_dragSource);
+  _dragText='';
+}
+
+// Drag between items inside board (reorder)
+let _dragId=null;
+function wbDragStart(event,id){_dragId=id;event.dataTransfer.effectAllowed='move';}
 
 function copyWeekPanel(){
   const now=new Date();
@@ -1119,26 +1151,10 @@ function copyWeekPanel(){
   const ws=new Date(now);ws.setDate(now.getDate()-(dow===0?6:dow-1));
   const we=new Date(ws);we.setDate(ws.getDate()+6);
   const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
-
-  // Collect from DOM — same order as rendered
-  const fromExcel=[];
-  document.querySelectorAll('#panel-week .week-item').forEach((el,i)=>{
-    const cb=el.querySelector('input[type=checkbox]');
-    const name=el.querySelector('.week-name')?.textContent||'';
-    const meta=el.querySelector('.week-meta')?.textContent||'';
-    fromExcel.push({name:name.trim(),meta:meta.trim(),done:cb?.checked||false});
-  });
-
   let txt=`📋 Semana ${fmt(ws)} – ${fmt(we)} — Abordaría esta semana\n\n`;
-  fromExcel.forEach(({name,meta,done})=>{
-    txt+=`${done?'☑':'☐'} ${name}`;
-    if(meta)txt+=`  [${meta}]`;
-    txt+='\n';
+  _wbItems.forEach(({text,done,source})=>{
+    txt+=`${done?'☑':'☐'} ${text}\n`;
   });
-  if(weekExtra.length){
-    if(fromExcel.length)txt+='\n';
-    weekExtra.forEach(({text,done})=>{txt+=`${done?'☑':'☐'} ${text}\n`;});
-  }
   txt+=`\n_Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}_`;
   navigator.clipboard.writeText(txt).then(()=>toast('✅ Copiado')).catch(()=>toast('Error al copiar'));
 }
