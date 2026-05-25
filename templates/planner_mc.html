@@ -1281,26 +1281,18 @@ function renderGantt(){
     return row;
   };
 
-  if(ganttArea==='all'){
-    byArea.forEach((aEntries,k)=>{
-      const a=AREAS[k];
-      html+=`<tr class="gantt-area-hdr"><td colspan="${cols.length+1}"><span style="margin-right:6px">${a.icon}</span>${a.name} (${aEntries.length})</td></tr>`;
-      aEntries.forEach(e=>html+=renderRow(e));
-    });
-  }else{
-    // Group by label within area
-    const byLabel=new Map();
-    entries.forEach(e=>{
-      const lbls=gLabels(e.r).split(';').map(s=>s.trim()).filter(Boolean);
-      const lbl=lbls.length?lbls[0]:'Sin etiqueta';
-      if(!byLabel.has(lbl))byLabel.set(lbl,[]);
-      byLabel.get(lbl).push(e);
-    });
-    byLabel.forEach((lEntries,lbl)=>{
-      html+=`<tr class="gantt-area-hdr"><td colspan="${cols.length+1}" style="font-size:11px">${lbl} (${lEntries.length})</td></tr>`;
-      lEntries.forEach(e=>html+=renderRow(e));
-    });
-  }
+    // Always group by label
+  const byLabel=new Map();
+  entries.forEach(e=>{
+    const lbls=gLabels(e.r).split(';').map(s=>s.trim()).filter(Boolean);
+    const lbl=lbls.length?lbls[0]:'Sin etiqueta';
+    if(!byLabel.has(lbl))byLabel.set(lbl,[]);
+    byLabel.get(lbl).push(e);
+  });
+  byLabel.forEach((lEntries,lbl)=>{
+    html+=`<tr class="gantt-area-hdr"><td colspan="${cols.length+1}">${lbl} (${lEntries.length})</td></tr>`;
+    lEntries.forEach(e=>html+=renderRow(e));
+  });
 
   html+='</tbody></table>';
   inner.innerHTML=html;
