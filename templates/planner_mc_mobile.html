@@ -53,6 +53,8 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
 .view.on{display:block}
 #view-plan{padding:0}
 #view-plan.on{display:flex}
+#view-exec{padding:0}
+#view-exec.on{display:flex}
 
 /* ── KPI ROW ─────────────────────────────── */
 .kpi-grid{display:grid;grid-template-columns:1fr 1fr;gap:9px;margin-bottom:18px}
@@ -219,9 +221,17 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
 .gantt-toggle-m{display:flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
 .gtoggle-m{padding:5px 12px;font-size:12px;font-weight:600;font-family:var(--font);background:#fff;border:none;cursor:pointer;color:var(--muted);-webkit-tap-highlight-color:transparent}
 .gtoggle-m.on{background:#0f1124;color:#fff}
+.gantt-area-chips-m{display:flex;gap:5px;flex-wrap:wrap;padding:6px 12px 4px}
+.garea-chip-m{font-size:10px;font-weight:600;padding:2px 8px;border-radius:12px;border:1px solid #e5e7eb;background:#f9fafb;color:#6b7280;cursor:pointer}
+.garea-chip-m.on{background:#4f46e5;color:#fff;border-color:#4f46e5}
 .gantt-hscroll{flex:1;overflow-x:auto;overflow-y:auto;-webkit-overflow-scrolling:touch}
 .gantt-hscroll::-webkit-scrollbar{display:none}
 .gantt-tbl{border-collapse:collapse;min-width:100%}
+.mgrid-tbl{width:100%;border-collapse:collapse;font-size:11.5px;min-width:480px}
+.mgrid-tbl th{position:sticky;top:0;background:#f9fafb;padding:7px 8px;text-align:left;font-size:10.5px;font-weight:700;color:#6b7280;border-bottom:1px solid #e5e7eb;cursor:pointer;white-space:nowrap}
+.mgrid-tbl td{padding:7px 8px;border-bottom:1px solid #f3f4f6;vertical-align:middle;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.mgrid-tbl tr:last-child td{border-bottom:none}
+.sbadge{display:inline-block;border-radius:4px;padding:2px 7px;font-size:10px;font-weight:700}
 .gantt-tbl th{background:#f8f9fc;border-bottom:1px solid var(--border);border-right:1px solid #eee;font-size:9.5px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.3px;white-space:nowrap;text-align:center;padding:3px 0;position:sticky;top:0;z-index:10}
 .gantt-tbl th.gn{text-align:left;padding:3px 10px;min-width:160px;max-width:160px;position:sticky;left:0;z-index:20;background:#f8f9fc}
 .gantt-tbl td{border-bottom:1px solid #f3f4f8;border-right:1px solid #f0f1f5;height:32px;padding:0;vertical-align:middle}
@@ -263,7 +273,12 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
 <div class="content">
 
   <!-- ── EXEC VIEW ── -->
-  <div id="view-exec" class="view on">
+  <div id="view-exec" class="view on" style="display:flex;flex-direction:column;padding:0">
+    <div style="display:flex;border-bottom:1px solid var(--border);background:#fff;flex-shrink:0;margin-bottom:0">
+      <button class="area-btn" id="etab-resumen" style="font-size:12px;font-weight:700;color:#4f46e5;border-bottom:2px solid #4f46e5;flex:1" onclick="setExecTabM('resumen',this)">Resumen</button>
+      <button class="area-btn" id="etab-init" style="font-size:12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;flex:1" onclick="setExecTabM('init',this)">Iniciativas</button>
+    </div>
+    <div id="exec-resumen-content" style="overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch;padding:16px 14px 20px">
     <div class="kpi-grid">
       <div class="kpi k-total kpi-wide">
         <div class="kpi-lbl">Total tareas</div>
@@ -370,6 +385,11 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
         </button>
       </div>
     </div>
+    </div><!-- /exec-resumen-content -->
+    <div id="exec-init-content" style="display:none;overflow-y:auto;flex:1;padding:12px;-webkit-overflow-scrolling:touch">
+      <div style="font-size:12px;font-weight:700;color:#374151;margin-bottom:10px">Todas las iniciativas activas</div>
+      <div id="minit-list"><div class="alert-empty">Sin datos — carga los Excel</div></div>
+    </div>
   </div>
 
   <!-- ── PLANNER VIEW (reused for eo/td/ai) ── -->
@@ -377,6 +397,7 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
     <!-- tabs de vista dentro de plan -->
     <div style="display:flex;border-bottom:1px solid var(--border);background:#fff;flex-shrink:0">
       <button class="area-btn" id="vtab-board" style="font-size:12px;font-weight:700;color:#4f46e5;border-bottom:2px solid #4f46e5;flex:1" onclick="setPlanTab('board',this)">Tablero</button>
+      <button class="area-btn" id="vtab-grid" style="font-size:12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;flex:1" onclick="setPlanTab('grid',this)">Lista</button>
       <button class="area-btn" id="vtab-gantt" style="font-size:12px;font-weight:600;color:var(--muted);border-bottom:2px solid transparent;flex:1" onclick="setPlanTab('gantt',this)">Timeline</button>
     </div>
     <div id="plan-board-content" style="padding:16px 14px 20px;overflow-y:auto;flex:1;-webkit-overflow-scrolling:touch">
@@ -394,11 +415,33 @@ html,body{height:100%;background:var(--bg);font-family:var(--font);color:var(--t
       <div class="plan-info" id="plan-info"></div>
       <div id="plan-body"></div>
     </div>
+    <div id="plan-grid-content" style="display:none;flex:1;overflow-x:auto;overflow-y:auto;-webkit-overflow-scrolling:touch">
+      <table class="mgrid-tbl" id="mgrid-tbl">
+        <thead><tr>
+          <th onclick="mgsrt('name')">Tarea</th>
+          <th onclick="mgsrt('bucket')">Estado</th>
+          <th onclick="mgsrt('assign')">Asignado</th>
+          <th onclick="mgsrt('end')">Vence</th>
+          <th onclick="mgsrt('pct')">%</th>
+        </tr></thead>
+        <tbody id="mgrid-body">
+          <tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted)">Sin datos cargados</td></tr>
+        </tbody>
+      </table>
+    </div>
     <div id="plan-gantt-content" style="display:none;flex:1;flex-direction:column;overflow:hidden">
       <div class="gantt-topbar-m">
         <div class="gantt-toggle-m">
           <button class="gtoggle-m on" onclick="setGanttScaleM('weeks',this)">Semanas</button>
           <button class="gtoggle-m" onclick="setGanttScaleM('months',this)">Meses</button>
+        </div>
+        <div class="gantt-area-chips-m" id="gantt-area-chips-m">
+          <button class="garea-chip-m on" onclick="setGanttAreaM('all',this)">Todas</button>
+          <button class="garea-chip-m" onclick="setGanttAreaM('eo',this)">EO</button>
+          <button class="garea-chip-m" onclick="setGanttAreaM('td',this)">TD</button>
+          <button class="garea-chip-m" onclick="setGanttAreaM('ai',this)">IA</button>
+          <button class="garea-chip-m" onclick="setGanttAreaM('id',this)">I+D</button>
+          <button class="garea-chip-m" onclick="setGanttAreaM('im',this)">IM</button>
         </div>
       </div>
       <div class="gantt-hscroll" id="gantt-hscroll-m">
@@ -501,6 +544,8 @@ const BUCKETS = [
   {k:'En Curso',               cls:'#a7f3d0', fcls:'#065f3e'},
   {k:'Finalizado',             cls:'#ddd6fe', fcls:'#4c1d95'},
 ];
+// Build bucket→style map from BUCKETS (used by grid/initiatives views)
+const SSTYLE={};BUCKETS.forEach(b=>{SSTYLE[b.k]=`background:${b.cls};color:${b.fcls}`});
 const AVC=['#7c3aed','#059669','#2563eb','#dc2626','#d97706','#0891b2','#be185d','#65a30d'];
 const TCL=[['#dcfce7','#166534'],['#dbeafe','#1e3a8a'],['#fce7f3','#831843'],['#fef9c3','#713f12'],
            ['#f0fdf4','#14532d'],['#ede9fe','#3b0764'],['#ffedd5','#7c2d12'],['#e0f2fe','#0c4a6e'],
@@ -631,13 +676,17 @@ function navToArea(areaId){
   if(navBtn)navBtn.classList.add('on');
   document.getElementById('hdr-sub').textContent=AREAS[areaId].name;
   // Reset plan tab to board on area change
-  if(curPlanTab==='gantt'){
+  if(curPlanTab==='gantt'||curPlanTab==='grid'){
     curPlanTab='board';
     document.getElementById('plan-board-content').style.display='';
+    document.getElementById('plan-grid-content').style.display='none';
     document.getElementById('plan-gantt-content').style.display='none';
     document.getElementById('vtab-board').style.color='#4f46e5';
     document.getElementById('vtab-board').style.borderBottomColor='#4f46e5';
     document.getElementById('vtab-board').style.fontWeight='700';
+    document.getElementById('vtab-grid').style.color='var(--muted)';
+    document.getElementById('vtab-grid').style.borderBottomColor='transparent';
+    document.getElementById('vtab-grid').style.fontWeight='600';
     document.getElementById('vtab-gantt').style.color='var(--muted)';
     document.getElementById('vtab-gantt').style.borderBottomColor='transparent';
     document.getElementById('vtab-gantt').style.fontWeight='600';
@@ -649,8 +698,9 @@ function navToArea(areaId){
 // ── RENDER EXEC ────────────────────────────────────────
 function refreshAll(){
   updateKPIs();updateAreaCards();
-  if(curArea==='plan'||curArea==='eo'||curArea==='td'||curArea==='ai'||curArea==='id'||curArea==='im'){renderPlan();if(curPlanTab==='gantt')renderGanttM();}
+  if(curArea==='plan'||curArea==='eo'||curArea==='td'||curArea==='ai'||curArea==='id'||curArea==='im'){renderPlan();if(curPlanTab==='gantt')renderGanttM();if(curPlanTab==='grid')renderGridM();}
   if(curArea==='alerts')renderAlerts();
+  if(curExecTabM==='init')renderInitiativesM();
   // Late dot
   const allRows=Object.values(AREAS).flatMap(a=>a.rows||[]);
   const lateN=allRows.filter(r=>isLate(gEnd(r),gPct(r))).length;
@@ -818,19 +868,25 @@ function bFbucket(b,el){abf=abf===b?null:b;document.querySelectorAll('.chip').fo
 
 // ── GANTT MOBILE ───────────────────────────────────────
 let ganttScaleM='weeks';
+let ganttAreaM='all';
 let curPlanTab='board';
+let mgsc=null,mgsd=1; // mobile grid sort col/dir
+let curExecTabM='resumen';
 
 function setPlanTab(tab,btn){
   curPlanTab=tab;
   const board=document.getElementById('plan-board-content');
+  const grid=document.getElementById('plan-grid-content');
   const gantt=document.getElementById('plan-gantt-content');
   board.style.display=tab==='board'?'':'none';
+  grid.style.display=tab==='grid'?'':'none';
   gantt.style.display=tab==='gantt'?'flex':'none';
   document.querySelectorAll('[id^="vtab-"]').forEach(b=>{
     b.style.color='var(--muted)';b.style.borderBottomColor='transparent';b.style.fontWeight='600';
   });
   btn.style.color='#4f46e5';btn.style.borderBottomColor='#4f46e5';btn.style.fontWeight='700';
   if(tab==='gantt')renderGanttM();
+  if(tab==='grid')renderGridM();
 }
 
 function setGanttScaleM(s,btn){
@@ -840,6 +896,50 @@ function setGanttScaleM(s,btn){
   renderGanttM();
 }
 
+function setGanttAreaM(a,btn){
+  ganttAreaM=a;
+  document.querySelectorAll('.garea-chip-m').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on');
+  renderGanttM();
+}
+
+function renderGridM(){
+  const keys=curArea==='ai'?['ai','id','im']:curArea==='exec'||curArea==='alerts'?['eo','td','ai','id','im']:[curArea];
+  const tbody=document.getElementById('mgrid-body');
+  let rows=[];
+  keys.forEach(k=>{const a=AREAS[k];if(a&&a.rows)a.rows.forEach(r=>rows.push({r,area:a}))});
+  if(!rows.length){tbody.innerHTML='<tr><td colspan="5" style="text-align:center;padding:30px;color:var(--muted)">Sin datos cargados</td></tr>';return}
+  const srch=document.getElementById('bsin').value.toLowerCase().trim();
+  if(srch)rows=rows.filter(({r})=>gName(r).toLowerCase().includes(srch)||gLabels(r).toLowerCase().includes(srch));
+  if(abf)rows=rows.filter(({r})=>gBucket(r)===abf);
+  if(mgsc){rows.sort((a,b)=>{
+    let va,vb;
+    if(mgsc==='name'){va=gName(a.r);vb=gName(b.r);}
+    else if(mgsc==='bucket'){va=gBucket(a.r);vb=gBucket(b.r);}
+    else if(mgsc==='assign'){va=gAssign(a.r);vb=gAssign(b.r);}
+    else if(mgsc==='end'){va=gEnd(a.r)||0;vb=gEnd(b.r)||0;}
+    else if(mgsc==='pct'){va=gPct(a.r)||0;vb=gPct(b.r)||0;}
+    if(typeof va==='number'&&typeof vb==='number')return(va-vb)*mgsd;
+    return(va||'').toString().localeCompare((vb||'').toString(),'es')*mgsd;
+  })}
+  tbody.innerHTML=rows.map(({r,area})=>{
+    const pct=gPct(r);
+    const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+    const end=gEnd(r);const ds=fDate(end);
+    const late=isLate(end,pct),near=isNear(end);
+    const bucket=gBucket(r);
+    const bstyle=SSTYLE[bucket]||'background:#f3f4f8;color:#374151';
+    return`<tr>
+      <td title="${gName(r)}">${gName(r).substring(0,40)}${gName(r).length>40?'…':''}</td>
+      <td><span class="sbadge" style="${bstyle};font-size:9.5px;padding:1px 5px">${bucket||'—'}</span></td>
+      <td style="color:#6b7280">${(gAssign(r)||'—').split(/[;,]/)[0].trim().substring(0,18)}</td>
+      <td style="color:${late?'#ef4444':near?'#d97706':'inherit'};font-weight:${late||near?700:400}">${ds||'—'}</td>
+      <td style="color:var(--muted)">${pctN!==null?pctN+'%':'—'}</td>
+    </tr>`;
+  }).join('')||'<tr><td colspan="5" style="text-align:center;padding:20px;color:var(--muted)">Sin resultados</td></tr>';
+}
+function mgsrt(col){if(mgsc===col)mgsd*=-1;else{mgsc=col;mgsd=1}renderGridM()}
+
 function renderGanttM(){
   const inner=document.getElementById('gantt-inner-m');
   if(!inner)return;
@@ -847,8 +947,17 @@ function renderGanttM(){
   if(!a){inner.innerHTML='<div style="padding:40px;text-align:center;color:var(--muted);font-size:13px">Sin datos con fechas</div>';return;}
   let entries=[];
 
-  const keys=curArea==='ai'?['ai','id','im']:[curArea];
-  keys.forEach(k=>{
+  let ganttKeys;
+  if(ganttAreaM!=='all'){
+    ganttKeys=[ganttAreaM];
+  }else if(curArea==='ai'){
+    ganttKeys=['ai','id','im'];
+  }else if(curArea==='exec'||curArea==='alerts'){
+    ganttKeys=['eo','td','ai','id','im'];
+  }else{
+    ganttKeys=[curArea];
+  }
+  ganttKeys.forEach(k=>{
     if(!AREAS[k]||!AREAS[k].rows)return;
     AREAS[k].rows.forEach(r=>{
       const end=pDate(gEnd(r));
@@ -925,6 +1034,47 @@ function renderGanttM(){
   });
   html+='</tbody></table>';
   inner.innerHTML=html;
+}
+
+// ── EXEC TABS ──────────────────────────────────────────
+function setExecTabM(tab,btn){
+  curExecTabM=tab;
+  ['etab-resumen','etab-init'].forEach(id=>{
+    const b=document.getElementById(id);
+    b.style.color='var(--muted)';b.style.borderBottomColor='transparent';b.style.fontWeight='600';
+  });
+  btn.style.color='#4f46e5';btn.style.borderBottomColor='#4f46e5';btn.style.fontWeight='700';
+  document.getElementById('exec-resumen-content').style.display=tab==='resumen'?'':'none';
+  document.getElementById('exec-init-content').style.display=tab==='init'?'':'none';
+  if(tab==='init')renderInitiativesM();
+}
+
+function renderInitiativesM(){
+  const el=document.getElementById('minit-list');
+  const all=[];
+  ['eo','td','ai','id','im'].forEach(k=>{
+    const a=AREAS[k];if(!a||!a.rows)return;
+    a.rows.filter(r=>gBucket(r)!=='Finalizado').forEach(r=>all.push({r,area:a}));
+  });
+  if(!all.length){el.innerHTML='<div class="alert-empty">Sin datos — carga los Excel</div>';return}
+  el.innerHTML=all.map(({r,area})=>{
+    const pct=gPct(r);
+    const pctN=pct===null?null:(pct<=1?Math.round(pct*100):Math.round(pct));
+    const end=gEnd(r);const ds=fDate(end);
+    const late=isLate(end,pct),near=isNear(end);
+    const bucket=gBucket(r);
+    const ss=SSTYLE&&SSTYLE[bucket]?SSTYLE[bucket]:'background:#f3f4f8;color:#374151';
+    return`<div style="background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:10px 12px;margin-bottom:8px">
+      <div style="font-size:12px;font-weight:600;color:#111827;margin-bottom:5px;line-height:1.3">${gName(r)}</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;align-items:center">
+        <span style="font-size:10px;font-weight:700;color:${area.hex||'#6b7280'}">${area.icon} ${area.name}</span>
+        <span class="sbadge" style="${ss};font-size:9.5px;padding:1px 5px">${bucket}</span>
+        ${ds?`<span style="font-size:10px;color:${late?'#ef4444':near?'#d97706':'#6b7280'};font-weight:${late?700:400}">${late?'⚠ Venció':'📅'} ${ds}</span>`:''}
+        ${pctN!==null?`<span style="font-size:10px;color:#6b7280">${pctN}%</span>`:''}
+        ${gAssign(r)?`<span style="font-size:10px;color:#6b7280">👤 ${gAssign(r).split(/[;,]/)[0].trim()}</span>`:''}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 // ── TOAST ──────────────────────────────────────────────
