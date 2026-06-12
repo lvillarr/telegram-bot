@@ -131,6 +131,7 @@ async def web_api_chat(request: Request):
     history    = body.get("history", [])
     model      = body.get("model", "claude-haiku-4-5-20251001")
     session_id = body.get("session_id", "web-anon")
+    agent      = body.get("agent", "orq")
     file_data  = body.get("file")   # legacy single file
     files_data = body.get("files", [])
     if file_data and not files_data:
@@ -199,8 +200,8 @@ async def web_api_chat(request: Request):
             yield f"data: {_note}\n\n"
         yield "data: [DONE]\n\n"
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, _db_save, "web", session_id, "user", message)
-        await loop.run_in_executor(None, _db_save, "web", session_id, "assistant", full_text)
+        await loop.run_in_executor(None, _db_save, "web", session_id, "user", message, agent)
+        await loop.run_in_executor(None, _db_save, "web", session_id, "assistant", full_text, agent)
 
     return StreamingResponse(generate(), media_type="text/event-stream")
 
@@ -364,21 +365,27 @@ def _db_init():
                     session_id  TEXT    NOT NULL,
                     role        TEXT    NOT NULL,
                     content     TEXT    NOT NULL,
+                    agent       TEXT    DEFAULT 'orq',
                     ts          DATETIME DEFAULT (datetime('now','localtime'))
                 )
             """)
             con.execute("CREATE INDEX IF NOT EXISTS idx_chat_ts ON chat_history(ts)")
+            # Agregar columna agent si no existe (para DBs existentes)
+            try:
+                con.execute("ALTER TABLE chat_history ADD COLUMN agent TEXT DEFAULT 'orq'")
+            except:
+                pass
             con.commit()
     except Exception as e:
         print(f"[DB] init error: {e}")
 
 
-def _db_save(platform: str, session_id: str, role: str, content: str):
+def _db_save(platform: str, session_id: str, role: str, content: str, agent: str = 'orq'):
     try:
         with sqlite3.connect(_DB_PATH) as con:
             con.execute(
-                "INSERT INTO chat_history (platform, session_id, role, content) VALUES (?,?,?,?)",
-                (platform, str(session_id), role, content),
+                "INSERT INTO chat_history (platform, session_id, role, content, agent) VALUES (?,?,?,?,?)",
+                (platform, str(session_id), role, content, agent),
             )
             con.commit()
     except Exception:
@@ -389,13 +396,13 @@ def _db_history(limit: int = 60) -> list:
     try:
         with sqlite3.connect(_DB_PATH) as con:
             rows = con.execute(
-                "SELECT platform, session_id, role, content, ts "
+                "SELECT platform, session_id, role, content, agent, ts "
                 "FROM chat_history ORDER BY ts DESC LIMIT ?",
                 (limit,),
             ).fetchall()
         rows.reverse()
         return [{"platform": r[0], "session_id": r[1], "role": r[2],
-                 "content": r[3], "ts": r[4]} for r in rows]
+                 "content": r[3], "agent": r[4] or 'orq', "ts": r[5]} for r in rows]
     except Exception:
         return []
 

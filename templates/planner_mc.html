@@ -1573,10 +1573,8 @@ function copySummary(){
   const fmt=d=>d.toLocaleDateString('es-CL',{day:'2-digit',month:'short'});
 
   const aOrder=['eo','td','ai','id','im'];
-  const areaColors={eo:'EO',td:'TD',ai:'IA',id:'I+D',im:'IM'};
   let gI=0,gP=0,gL=0;
 
-  // Collect week tasks grouped by area (no duplicates)
   const byArea=[];
   const lateItems=[];
 
@@ -1608,12 +1606,15 @@ function copySummary(){
 
   if(!byArea.length){toast('Sin tareas pendientes o atrasadas con etiqueta Week');return;}
 
-  let txt=`📋 *Resumen Semana ${fmt(ws)} – ${fmt(we)}*\n`;
+  const dateStr=`${fmt(ws)} – ${fmt(we)}`;
+  const footer=`Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}`;
+
+  // ── Plain text (Telegram / WhatsApp) ──────────────────────
+  let txt=`📋 *Resumen Semana ${dateStr}*\n`;
   txt+=`🔵 _${gI} en curso_ · ⬜ _${gP} por iniciar_ · 🔴 _${gL} ${gL===1?'vencida':'vencidas'}_\n\n`;
 
   byArea.forEach(({area,items})=>{
     txt+=`*${area.icon} ${area.name}*\n`;
-    // Sub-group by label
     const byLbl=new Map();
     items.forEach(item=>{
       const lbls=gLabels(item.r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
@@ -1636,7 +1637,6 @@ function copySummary(){
     });
     txt+='\n';
   });
-
   if(lateItems.length){
     txt+=`⚠️ *Focos de la semana — requieren atención*\n`;
     lateItems.forEach(({name,area,ds,assign})=>{
@@ -1647,10 +1647,63 @@ function copySummary(){
     });
     txt+='\n';
   }
+  txt+=`_${footer}_`;
 
-  txt+=`_Subgerencia Mejora Continua · ${now.toLocaleDateString('es-CL',{weekday:'long',day:'2-digit',month:'long'})}_`;
+  // ── HTML (OneNote) ─────────────────────────────────────────
+  const esc=s=>s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const statusColor={late:'#dc2626',ip:'#2563eb',pend:'#374151'};
+  let h=`<html><body style="font-family:Calibri,Arial,sans-serif;font-size:11pt;color:#1f2937">`;
+  h+=`<p><b>📋 Resumen Semana ${esc(dateStr)}</b></p>`;
+  h+=`<p style="color:#6b7280;font-size:10pt">🔵 <i>${gI} en curso</i> &nbsp;·&nbsp; ⬜ <i>${gP} por iniciar</i> &nbsp;·&nbsp; 🔴 <i>${gL} ${gL===1?'vencida':'vencidas'}</i></p>`;
 
-  navigator.clipboard.writeText(txt).then(()=>toast('✅ Copiado — listo para pegar en Telegram/WhatsApp')).catch(()=>toast('Error al copiar'));
+  byArea.forEach(({area,items})=>{
+    h+=`<p style="margin:12px 0 4px"><b>${esc(area.icon+' '+area.name)}</b></p>`;
+    const byLbl=new Map();
+    items.forEach(item=>{
+      const lbls=gLabels(item.r).split(';').map(s=>s.trim()).filter(s=>s&&s.toLowerCase()!=='week');
+      const lbl=lbls.length?lbls[0]:'General';
+      if(!byLbl.has(lbl))byLbl.set(lbl,[]);
+      byLbl.get(lbl).push(item);
+    });
+    const flat=byLbl.size===1&&byLbl.has('General');
+    byLbl.forEach((lblItems,lbl)=>{
+      if(!flat)h+=`<p style="margin:6px 0 2px;padding-left:16px;color:#4b5563;font-style:italic;font-size:10pt">${esc(lbl)}</p>`;
+      h+=`<ul style="margin:2px 0;padding-left:${flat?20:36}px;list-style:none">`;
+      lblItems.forEach(({r,ds,assign,status,pctN})=>{
+        const icon=status==='late'?'🔴':status==='ip'?'🔵':'⬜';
+        const col=statusColor[status];
+        let meta='';
+        if(pctN!==null&&pctN>0&&status!=='late')meta+=` (${pctN}%)`;
+        if(ds)meta+=` · ${status==='late'?'Venció':'Vence'}: ${esc(ds)}`;
+        if(assign)meta+=` · ${esc(assign)}`;
+        h+=`<li style="margin:3px 0">${icon} <span style="color:${col};font-weight:600">${esc(gName(r))}</span><span style="color:#6b7280;font-size:9.5pt">${esc(meta)}</span></li>`;
+      });
+      h+=`</ul>`;
+    });
+  });
+
+  if(lateItems.length){
+    h+=`<p style="margin:12px 0 4px"><b>⚠️ Focos de la semana — requieren atención</b></p>`;
+    h+=`<ul style="margin:2px 0;padding-left:20px;list-style:none">`;
+    lateItems.forEach(({name,area,ds,assign})=>{
+      let meta=` [${esc(area)}]`;
+      if(ds)meta+=` · Venció: ${esc(ds)}`;
+      if(assign)meta+=` · ${esc(assign)}`;
+      h+=`<li style="margin:3px 0">🔴 <span style="color:#dc2626;font-weight:600">${esc(name)}</span><span style="color:#6b7280;font-size:9.5pt">${esc(meta)}</span></li>`;
+    });
+    h+=`</ul>`;
+  }
+  h+=`<p style="margin-top:16px;color:#9ca3af;font-size:9pt;font-style:italic">${esc(footer)}</p>`;
+  h+=`</body></html>`;
+
+  // Write both formats — OneNote picks HTML, Telegram/WhatsApp picks plain
+  const item=new ClipboardItem({
+    'text/html':new Blob([h],{type:'text/html'}),
+    'text/plain':new Blob([txt],{type:'text/plain'})
+  });
+  navigator.clipboard.write([item])
+    .then(()=>toast('✅ Copiado — pega en OneNote, Telegram o WhatsApp'))
+    .catch(()=>navigator.clipboard.writeText(txt).then(()=>toast('✅ Copiado (texto plano)')).catch(()=>toast('Error al copiar')));
 }
 </script>
 

@@ -38,6 +38,22 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .s-icon{width:26px;height:26px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:.75rem;flex-shrink:0;color:#fff}
 .s-label{font-size:.78rem;font-weight:700;color:#444}
 .s-desc{font-size:.66rem;color:#aaa}
+
+/* Agent selector */
+.agent-selector{display:flex;flex-direction:column;gap:6px;padding:12px;background:#f9f7f5;border-radius:8px;margin:12px;border:1px solid #f0ede9}
+.agent-radio{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;cursor:pointer;transition:background .1s}
+.agent-radio:hover{background:#f5f2ee}
+.agent-radio input[type="radio"]{cursor:pointer}
+.agent-radio label{flex:1;cursor:pointer;display:flex;align-items:center;gap:8px}
+.agent-icon{width:20px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;font-size:.6rem;color:#fff;flex-shrink:0;font-weight:700}
+.agent-name{font-size:.75rem;font-weight:700;color:#333}
+.agent-radio input[type="radio"]:checked+label .agent-icon{box-shadow:0 0 0 2px #BFB800}
+
+/* Platform filter tabs */
+.platform-tabs{display:flex;gap:4px;padding:10px 12px;border-bottom:1px solid #f0ede9}
+.platform-tab{padding:4px 10px;font-size:.72rem;border:1px solid #ddd;border-radius:4px;background:#fff;cursor:pointer;transition:all .1s;color:#666}
+.platform-tab:hover{border-color:#696158;color:#696158}
+.platform-tab.active{background:#696158;color:#fff;border-color:#696158}
 .sidebar-divider{height:1px;background:#f0ede9;margin:6px 14px}
 
 .chat-wrap{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -74,9 +90,14 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 .bubble p{margin:4px 0}
 .bubble ol{padding-left:18px;margin:6px 0}
 .bubble ol li{margin:3px 0}
-.agent-tag{display:inline-block;font-size:.62rem;font-weight:700;padding:2px 7px;border-radius:4px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em}
+.agent-tag{display:inline-block;font-size:.62rem;font-weight:700;padding:3px 8px;border-radius:4px;margin-bottom:5px;text-transform:uppercase;letter-spacing:.04em;margin-right:4px}
 .tag-orq{background:#696158;color:#fff}
+.tag-eo{background:#EA7600;color:#fff}
+.tag-ia{background:#BFB800;color:#333}
+.tag-td{background:#DFD1A7;color:#333}
+.tag-da{background:#f0ede9;color:#696158;border:1px solid #DFD1A7}
 .msg-time{font-size:.62rem;color:#ccc}
+.msg-platform-indicator{display:inline-block;font-size:.6rem;color:#bbb;margin-left:4px}
 
 .typing-dots{display:flex;gap:4px;padding:10px 14px;background:#fff;border-radius:3px 10px 10px 10px;border:1px solid #eee;width:fit-content}
 .typing-dots span{width:6px;height:6px;background:#BFB800;border-radius:50%;animation:bounce .7s infinite}
@@ -220,26 +241,43 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
 <div class="main">
   <div class="sidebar">
     <button class="new-btn" onclick="newChat()">+ Nueva conversación</button>
-    <div class="sidebar-label">Agentes</div>
-    <div class="sidebar-item active">
-      <div class="s-icon" style="background:#696158">⚙</div>
-      <div><div class="s-label">Orquestador</div><div class="s-desc">Síntesis ejecutiva</div></div>
-    </div>
-    <div class="sidebar-item">
-      <div class="s-icon" style="background:#EA7600">📋</div>
-      <div><div class="s-label">Excelencia Op.</div><div class="s-desc">Lean, BPMN, KPIs</div></div>
-    </div>
-    <div class="sidebar-item">
-      <div class="s-icon" style="background:#BFB800">🤖</div>
-      <div><div class="s-label">Inteligencia IA</div><div class="s-desc">ML, GenAI, dashboards</div></div>
-    </div>
-    <div class="sidebar-item">
-      <div class="s-icon" style="background:#DFD1A7;color:#696158">⚡</div>
-      <div><div class="s-label">Transf. Digital</div><div class="s-desc">APIs, ETL, telemetría</div></div>
-    </div>
-    <div class="sidebar-item">
-      <div class="s-icon" style="background:#f0ede9;color:#696158">📊</div>
-      <div><div class="s-label">Análisis Datos</div><div class="s-desc">Excel, PDF, reportes</div></div>
+    <div class="sidebar-label">Agente activo</div>
+    <div class="agent-selector">
+      <div class="agent-radio">
+        <input type="radio" id="agent-orq" name="agent" value="orq" checked onchange="setAgent(this.value)">
+        <label for="agent-orq">
+          <div class="agent-icon" style="background:#696158">⚙</div>
+          <div class="agent-name">Orquestador</div>
+        </label>
+      </div>
+      <div class="agent-radio">
+        <input type="radio" id="agent-eo" name="agent" value="eo" onchange="setAgent(this.value)">
+        <label for="agent-eo">
+          <div class="agent-icon" style="background:#EA7600">📋</div>
+          <div class="agent-name">Excelencia Op.</div>
+        </label>
+      </div>
+      <div class="agent-radio">
+        <input type="radio" id="agent-ia" name="agent" value="ia" onchange="setAgent(this.value)">
+        <label for="agent-ia">
+          <div class="agent-icon" style="background:#BFB800">🤖</div>
+          <div class="agent-name">Inteligencia IA</div>
+        </label>
+      </div>
+      <div class="agent-radio">
+        <input type="radio" id="agent-td" name="agent" value="td" onchange="setAgent(this.value)">
+        <label for="agent-td">
+          <div class="agent-icon" style="background:#DFD1A7;color:#696158">⚡</div>
+          <div class="agent-name">Transf. Digital</div>
+        </label>
+      </div>
+      <div class="agent-radio">
+        <input type="radio" id="agent-da" name="agent" value="da" onchange="setAgent(this.value)">
+        <label for="agent-da">
+          <div class="agent-icon" style="background:#f0ede9;color:#696158">📊</div>
+          <div class="agent-name">Análisis Datos</div>
+        </label>
+      </div>
     </div>
     <div class="sidebar-divider"></div>
     <div class="sidebar-label">Planners</div>
@@ -273,6 +311,11 @@ body{font-family:'Lato',-apple-system,sans-serif;background:#f0ede9;color:#333;h
   </div>
 
   <div class="chat-wrap">
+    <div class="platform-tabs" id="platformTabs">
+      <button class="platform-tab active" onclick="filterPlatform('all')">💬 Todas</button>
+      <button class="platform-tab" onclick="filterPlatform('web')">🌐 Web</button>
+      <button class="platform-tab" onclick="filterPlatform('telegram')">📱 Telegram</button>
+    </div>
     <div class="messages" id="messages">
       <div class="empty-state" id="emptyState">
         <h2>Sistema Multiagente Arauco</h2>
@@ -358,6 +401,16 @@ let history = [];
 let streaming = false;
 let cmdFocusIdx = -1;
 let currentMessages = []; // [{role, content, ts}] para guardar en historial
+let currentAgent = 'orq'; // agente seleccionado
+let currentPlatformFilter = 'all'; // filtro de plataforma
+
+const AGENT_CONFIG = {
+  orq: {name:'Orquestador', color:'#696158', emoji:'⚙', tag:'tag-orq'},
+  eo:  {name:'Excelencia Operacional', color:'#EA7600', emoji:'📋', tag:'tag-eo'},
+  ia:  {name:'Inteligencia Artificial', color:'#BFB800', emoji:'🤖', tag:'tag-ia'},
+  td:  {name:'Transformación Digital', color:'#DFD1A7', emoji:'⚡', tag:'tag-td'},
+  da:  {name:'Análisis de Datos', color:'#f0ede9', emoji:'📊', tag:'tag-da'}
+};
 
 // Session ID del turno actual
 let currentConvId = 'web-' + crypto.randomUUID();
@@ -559,6 +612,26 @@ function now(){
   return new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'});
 }
 
+function setAgent(agentKey){
+  currentAgent = agentKey;
+  localStorage.setItem('mc_current_agent', agentKey);
+}
+
+function filterPlatform(platform){
+  currentPlatformFilter = platform;
+  document.querySelectorAll('.platform-tab').forEach(tab => tab.classList.remove('active'));
+  event.target.classList.add('active');
+
+  const msgs = document.querySelectorAll('.msg');
+  msgs.forEach(msg => {
+    if(platform === 'all') msg.style.display = 'flex';
+    else {
+      const plat = msg.dataset.platform || 'web';
+      msg.style.display = (plat === platform) ? 'flex' : 'none';
+    }
+  });
+}
+
 function setInput(t){
   const ta = document.getElementById('input');
   ta.value = t;
@@ -607,6 +680,7 @@ function renderHistoricUser(m){
   const time = m.ts ? m.ts.slice(11,16) : '';
   const d = document.createElement('div');
   d.className = 'msg user';
+  d.dataset.platform = m.platform || 'web';
   d.innerHTML = `
     <div class="avatar av-user" title="${plat}">LV</div>
     <div class="msg-body">
@@ -620,12 +694,15 @@ function renderHistoricAI(m){
   const msgs = document.getElementById('messages');
   const plat = PLATFORM_LABEL[m.platform] || m.platform;
   const time = m.ts ? m.ts.slice(11,16) : '';
+  const agent = m.agent || 'orq';
+  const agentCfg = AGENT_CONFIG[agent] || AGENT_CONFIG.orq;
   const d = document.createElement('div');
   d.className = 'msg ai';
+  d.dataset.platform = m.platform || 'web';
   d.innerHTML = `
-    <div class="avatar av-ai" title="${plat}">MC</div>
+    <div class="avatar av-ai" title="${plat}" style="background:${agentCfg.color}">${agentCfg.emoji}</div>
     <div class="msg-body">
-      <div class="msg-meta">Sistema · ${plat} · ${time}</div>
+      <div class="msg-meta"><span class="agent-tag ${agentCfg.tag}">${agentCfg.name}</span>· ${plat} · ${time}</div>
       <div class="bubble">${renderMd(m.content)}</div>
     </div>`;
   msgs.appendChild(d);
@@ -959,6 +1036,7 @@ function appendUser(text, file){
   const msgs = document.getElementById('messages');
   const d = document.createElement('div');
   d.className = 'msg user';
+  d.dataset.platform = 'web';
 
   let fileHtml = '';
   if(file){
@@ -1005,8 +1083,6 @@ function appendAI(text){
   const typing = document.getElementById('typing-indicator');
   if(typing) typing.remove();
 
-  // Remove IDs from previous streaming divs — getElementById returns the first match,
-  // so stale IDs from prior responses cause updates to go to the wrong bubble.
   document.getElementById('ai-streaming')?.removeAttribute('id');
   document.getElementById('ai-bubble')?.removeAttribute('id');
 
@@ -1014,11 +1090,13 @@ function appendAI(text){
   const d = document.createElement('div');
   d.className = 'msg ai';
   d.id = 'ai-streaming';
+  d.dataset.platform = 'web';
 
+  const agentCfg = AGENT_CONFIG[currentAgent] || AGENT_CONFIG.orq;
   const bubble = document.createElement('div');
   bubble.id = 'ai-bubble';
   bubble.className = 'bubble';
-  bubble.innerHTML = `<span class="agent-tag tag-orq">Orquestador</span><br>${renderMd(text)}`;
+  bubble.innerHTML = `<span class="agent-tag ${agentCfg.tag}">${agentCfg.name}</span><br>${renderMd(text)}`;
 
   const body = document.createElement('div');
   body.className = 'msg-body';
@@ -1027,13 +1105,14 @@ function appendAI(text){
 
   const av = document.createElement('div');
   av.className = 'avatar av-ai';
-  av.textContent = 'MC';
+  av.style.background = agentCfg.color;
+  av.textContent = agentCfg.emoji;
 
   d.appendChild(av);
   d.appendChild(body);
   msgs.appendChild(d);
   msgs.scrollTop = msgs.scrollHeight;
-  return bubble; // referencia directa, no getElementById
+  return bubble;
 }
 
 async function send(){
@@ -1138,6 +1217,7 @@ async function send(){
         history: history.slice(0,-1),
         model: model,
         session_id: SESSION_ID,
+        agent: currentAgent,
         files: sentFiles.length ? sentFiles : undefined
       })
     });
@@ -1468,6 +1548,13 @@ async function sendEmailDraft(emailData, btn){
     btn.textContent=origText;
     btn.disabled=false;
   }
+}
+
+// Restore agent selection from localStorage
+const savedAgent = localStorage.getItem('mc_current_agent');
+if(savedAgent && AGENT_CONFIG[savedAgent]) {
+  currentAgent = savedAgent;
+  document.getElementById(`agent-${savedAgent}`)?.setAttribute('checked', 'checked');
 }
 
 // Carga historial al abrir
