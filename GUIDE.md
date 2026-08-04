@@ -480,6 +480,43 @@ ARTIFACT_PROMPTS["html"] = """Genera un dashboard HTML con estos colores:
 """
 ```
 
+### Router local-first (Ollama) — experimental, off por defecto
+
+Inspirado en [OpenJarvis](https://github.com/open-jarvis/OpenJarvis): consultas simples
+(saludos, preguntas cortas sin datos ni pedido de artefacto) se resuelven con un modelo
+local vía Ollama, sin pegarle a la API de Claude. Vive en `local_router.py`.
+
+**Solo para dev/testing local.** Railway no tiene Ollama corriendo — mientras
+`LOCAL_ROUTER_ENABLED` no esté seteado en `1`, el bot ignora el router y sigue usando
+Claude para todo, igual que antes.
+
+Instalar y levantar Ollama local (binario oficial, sin compilar):
+```bash
+curl -fL -o /tmp/ollama-darwin.tgz \
+  https://github.com/ollama/ollama/releases/latest/download/ollama-darwin.tgz
+mkdir -p ~/.local/lib && tar -xzf /tmp/ollama-darwin.tgz -C ~/.local/lib/ollama
+ln -sf ~/.local/lib/ollama/ollama ~/.local/bin/ollama   # ~/.local/bin en el PATH
+
+ollama serve &                  # deja el servidor corriendo
+ollama pull llama3.2:3b         # modelo starter (~2 GB)
+```
+
+Variables de entorno:
+
+| Variable | Default | Uso |
+|---|---|---|
+| `LOCAL_ROUTER_ENABLED` | `0` | `1` para activar el router |
+| `OLLAMA_HOST` | `http://localhost:11434` | Endpoint de Ollama |
+| `OLLAMA_MODEL` | `llama3.2:3b` | Modelo a usar |
+| `OLLAMA_TIMEOUT` | `12` (segundos) | Timeout antes de caer a Claude. Subir si el modelo está frío (recién arrancado el server) |
+
+Heurística de ruteo (`should_route_local` en `local_router.py`): mensaje corto
+(≤140 chars), sin historial previo, sin dígitos, sin keywords de dominio
+(kpi, sap, sgl, cosecha, genera reporte, etc.). Cualquier duda → fallback a Claude.
+Si Ollama no responde o tira error, `ollama_response()` devuelve `None` y
+`handle_message` sigue con el flujo normal de Claude — cero riesgo de romper
+respuestas por el router.
+
 ---
 
 ## Mantenimiento y versiones

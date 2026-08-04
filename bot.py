@@ -15,6 +15,7 @@ from datetime import datetime
 import anthropic
 import groq as groq_lib
 import rag
+import local_router
 import openpyxl
 import pdfplumber
 from collections import OrderedDict
@@ -1929,11 +1930,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         system     = _dynamic_system(rag_ctx)
         loop = asyncio.get_event_loop()
-        reply = await loop.run_in_executor(
-            None,
-            lambda: claude_response(system, user_msg, max_tokens=4096,
-                                    model=get_model_for_msg(context, user_msg), history=history),
-        )
+        reply = None
+        if local_router.should_route_local(user_msg, history):
+            reply = await loop.run_in_executor(
+                None, lambda: local_router.ollama_response(system, user_msg, history)
+            )
+        if reply is None:
+            reply = await loop.run_in_executor(
+                None,
+                lambda: claude_response(system, user_msg, max_tokens=4096,
+                                        model=get_model_for_msg(context, user_msg), history=history),
+            )
         if is_correction:
             reply += "\n\n_Correccion registrada para ambos canales._"
         push_history(context, user_msg, reply)
