@@ -184,7 +184,8 @@ async def web_api_chat(request: Request):
             loop_lr = asyncio.get_event_loop()
             local_reply = await loop_lr.run_in_executor(
                 None,
-                lambda: local_router.ollama_response(_dynamic_system(rag_ctx), message, history),
+                lambda: local_router.ollama_response(
+                    local_router.LOCAL_SYSTEM_PROMPT, message, history),
             )
 
         if local_reply is not None:
@@ -1945,7 +1946,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply = None
         if local_router.should_route_local(user_msg, history):
             reply = await loop.run_in_executor(
-                None, lambda: local_router.ollama_response(system, user_msg, history)
+                None, lambda: local_router.ollama_response(
+                    local_router.LOCAL_SYSTEM_PROMPT, user_msg, history)
             )
         if reply is None:
             reply = await loop.run_in_executor(

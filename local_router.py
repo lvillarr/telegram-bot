@@ -19,6 +19,14 @@ OLLAMA_TIMEOUT = float(os.environ.get("OLLAMA_TIMEOUT", "12"))
 
 _MAX_LOCAL_CHARS = 140
 
+LOCAL_SYSTEM_PROMPT = (
+    "Sos el asistente digital de la Subgerencia de Mejora Continua de Arauco "
+    "(empresa forestal-industrial chilena). Respondé breve y en español. "
+    "No inventes datos operacionales, KPIs ni capacidades que no tengas. "
+    "Si la consulta pide un dato concreto, un archivo o un analisis de "
+    "negocio, decí que no podés resolverlo en este modo y sugerí reformular."
+)
+
 # Temas de dominio (forestal / Arauco MC) o de tarea compleja: nunca ruteo local.
 _DOMAIN_KEYWORDS = (
     "kpi", "sap", "sgl", "planex", "opticort", "cosecha", "transporte",

@@ -15,7 +15,8 @@ TOP_K           = 4
 MAX_DISTANCE    = 0.55   # umbral de similitud coseno (menor = más similar)
 
 # ── Clientes ──────────────────────────────────────────────────────────────────
-voyage  = voyageai.Client(api_key=os.environ.get("VOYAGE_API_KEY", ""))
+_VOYAGE_API_KEY = os.environ.get("VOYAGE_API_KEY", "")
+voyage  = voyageai.Client(api_key=_VOYAGE_API_KEY) if _VOYAGE_API_KEY else None
 chroma  = chromadb.PersistentClient(path=CHROMA_PATH)
 col     = chroma.get_or_create_collection(
     name=COLLECTION_NAME,
