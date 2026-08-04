@@ -179,23 +179,35 @@ async def web_api_chat(request: Request):
             )
             await loop0.run_in_executor(None, _lessons_save, "web", rule, message)
 
-        stream_kwargs = dict(
-            model=model,
-            max_tokens=8192,
-            temperature=0,
-            system=_cached_system(_dynamic_system(rag_ctx)),
-            messages=msgs,
-            extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
-        )
-        if model in _EFFORT_MODELS:
-            stream_kwargs["output_config"] = {"effort": "low"}
-        try:
-            async with _async_client.messages.stream(**stream_kwargs) as stream:
-                async for text in stream.text_stream:
-                    full_text += text
-                    yield f"data: {json.dumps({'text': text})}\n\n"
-        except Exception as e:
-            yield f"data: {json.dumps({'text': f'[Error: {e}]'})}\n\n"
+        local_reply = None
+        if not files_data and local_router.should_route_local(message, history):
+            loop_lr = asyncio.get_event_loop()
+            local_reply = await loop_lr.run_in_executor(
+                None,
+                lambda: local_router.ollama_response(_dynamic_system(rag_ctx), message, history),
+            )
+
+        if local_reply is not None:
+            full_text = local_reply
+            yield f"data: {json.dumps({'text': local_reply})}\n\n"
+        else:
+            stream_kwargs = dict(
+                model=model,
+                max_tokens=8192,
+                temperature=0,
+                system=_cached_system(_dynamic_system(rag_ctx)),
+                messages=msgs,
+                extra_headers={"anthropic-beta": "prompt-caching-2024-07-31"},
+            )
+            if model in _EFFORT_MODELS:
+                stream_kwargs["output_config"] = {"effort": "low"}
+            try:
+                async with _async_client.messages.stream(**stream_kwargs) as stream:
+                    async for text in stream.text_stream:
+                        full_text += text
+                        yield f"data: {json.dumps({'text': text})}\n\n"
+            except Exception as e:
+                yield f"data: {json.dumps({'text': f'[Error: {e}]'})}\n\n"
         if is_correction:
             _note = json.dumps({"text": "\n\n_Correccion registrada para ambos canales._"})
             yield f"data: {_note}\n\n"
@@ -1276,7 +1288,7 @@ Incluye: esquema de datos, frecuencia de muestreo, estrategia de almacenamiento 
 }
 
 client      = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
-groq_client = groq_lib.Groq(api_key=os.environ["GROQ_API_KEY"])
+groq_client = groq_lib.Groq(api_key=os.environ.get("GROQ_API_KEY", ""))
 
 MAX_HISTORY          = 12    # máximo mensajes en historial (6 turnos)
 _HIST_TOKEN_BUDGET   = 6000  # tokens estimados máximos para historial
@@ -4588,45 +4600,49 @@ async def post_init(application):
         BotCommand("notas",       "📝 Activar modo notas"),
     ])
 
-app = (
-    ApplicationBuilder()
-    .token(os.environ["TELEGRAM_TOKEN"])
-    .persistence(PicklePersistence(filepath="/tmp/bot_persistence"))
-    .post_init(post_init)
-    .build()
-)
-
-app.add_handler(CommandHandler("start",      start_handler))
-app.add_handler(CommandHandler("reset",      reset_handler))
-app.add_handler(CommandHandler("planner",    planner_handler))
-app.add_handler(CommandHandler("notas",      notas_handler))
-app.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
-app.add_handler(CommandHandler("modelo",     modelo_handler))
-app.add_handler(CommandHandler("indexar",    indexar_handler))
-app.add_handler(CommandHandler("notebookrag", documentos_handler))
-app.add_handler(CommandHandler("documentos",  documentos_handler))
-app.add_handler(CommandHandler("buscar",     buscar_handler))
-app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
-app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
-
-app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel|edit.*)$"))
-app.add_handler(CallbackQueryHandler(notas_callback,        pattern="^notas_"))
-app.add_handler(CallbackQueryHandler(image_callback,        pattern="^img_"))
-
-for skill in SKILL_PROMPTS:
-    app.add_handler(CommandHandler(skill, skill_handler))
-
-app.add_handler(CommandHandler("artifact", artifact_handler))
-app.add_handler(CallbackQueryHandler(artifact_callback, pattern="^art_"))
-app.add_handler(MessageHandler(filters.LOCATION, handle_location))
-app.add_handler(MessageHandler(filters.VOICE, handle_audio))
-app.add_handler(MessageHandler(filters.AUDIO, handle_audio))
-app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
-app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-app.add_handler(MessageHandler(filters.PHOTO, handle_image))
-
-
 _db_init()
 _lessons_init()
 _week_board_init()
-app.run_polling(drop_pending_updates=True)
+
+if os.environ.get("TELEGRAM_TOKEN"):
+    app = (
+        ApplicationBuilder()
+        .token(os.environ["TELEGRAM_TOKEN"])
+        .persistence(PicklePersistence(filepath="/tmp/bot_persistence"))
+        .post_init(post_init)
+        .build()
+    )
+
+    app.add_handler(CommandHandler("start",      start_handler))
+    app.add_handler(CommandHandler("reset",      reset_handler))
+    app.add_handler(CommandHandler("planner",    planner_handler))
+    app.add_handler(CommandHandler("notas",      notas_handler))
+    app.add_handler(CallbackQueryHandler(reset_callback, pattern="^reset_"))
+    app.add_handler(CommandHandler("modelo",     modelo_handler))
+    app.add_handler(CommandHandler("indexar",    indexar_handler))
+    app.add_handler(CommandHandler("notebookrag", documentos_handler))
+    app.add_handler(CommandHandler("documentos",  documentos_handler))
+    app.add_handler(CommandHandler("buscar",     buscar_handler))
+    app.add_handler(CallbackQueryHandler(modelo_callback,    pattern="^mdl_"))
+    app.add_handler(CallbackQueryHandler(rag_index_callback,   pattern="^rag_index$"))
+
+    app.add_handler(CallbackQueryHandler(email_confirm_callback, pattern="^email_(confirm|cancel|edit.*)$"))
+    app.add_handler(CallbackQueryHandler(notas_callback,        pattern="^notas_"))
+    app.add_handler(CallbackQueryHandler(image_callback,        pattern="^img_"))
+
+    for skill in SKILL_PROMPTS:
+        app.add_handler(CommandHandler(skill, skill_handler))
+
+    app.add_handler(CommandHandler("artifact", artifact_handler))
+    app.add_handler(CallbackQueryHandler(artifact_callback, pattern="^art_"))
+    app.add_handler(MessageHandler(filters.LOCATION, handle_location))
+    app.add_handler(MessageHandler(filters.VOICE, handle_audio))
+    app.add_handler(MessageHandler(filters.AUDIO, handle_audio))
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_document))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_image))
+
+    app.run_polling(drop_pending_updates=True)
+else:
+    print(f"[WEB] Sin TELEGRAM_TOKEN — solo web chat en http://localhost:{_HTTP_PORT}")
+    threading.Event().wait()
